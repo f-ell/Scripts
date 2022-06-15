@@ -1,7 +1,10 @@
 #!/bin/sh
+# TODO
+# Add '-p .git' by default and implement -n | -g | --no-git-ignore option
+
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.2.7
+Version=0.2.8
 
 Usage() {
 printf "
@@ -106,7 +109,7 @@ SigHandler() {
   [ "$DepthError"           = True ] \
     && Err   1 "Depth has to be a positive, non-zero integer."
   [ "$DirError"             = True ] && Err   1 "Directory does not exist '$1'."
-  [ "$ExcludeFileError"     = True ] && Err   1\
+  [ "$ExcludeFileError"     = True ] && Err   1 \
     "Pattern File '$1' doesn't exist, isn't a file, or doesn't have read permissions."
   [ "$FileNotFoundWarning"  = True ] && Warn "File not found '$1' - skipping."
 }
@@ -193,7 +196,9 @@ while [ -n "$1" ]; do
       shift 2;;
 
     -p|--pattern)
-      ExcludePattern="$ExcludePattern$2,"
+      Pattern=${2%/}
+      ExcludePattern="$ExcludePattern**/${Pattern#*/},"
+      unset Pattern
       shift 2;;
 
     -*)
@@ -213,6 +218,7 @@ if [ -n "$ExcludePattern" ] || [ -n "$ExcludeFile" ]; then
 
   if [ -n "$ExcludeFile" ]; then
     while IFS='' read -r File; do
+      File=${File%/}
       ExcludeList="$ExcludeList**/${File#*/},"
     done < "$ExcludeFile"
   fi
