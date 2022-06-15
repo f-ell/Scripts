@@ -1,0 +1,247 @@
+#!/bin/sh
+# TODO
+# Add '-p .git' by default and implement -n | -g | --no-git-ignore option
+
+Authors='Nico Pareigis'
+Program=${0##*/}
+Version=0.2.8
+
+Usage() {
+printf "
+NAME
+    $Program - (Neo)Vim-Fuzzy-Finder - find file in filesystem and open it with
+    Vi, Vim, or NeoVim
+
+SYNOPSIS
+    $Program [OPTS] [DIR] [-- EXP]
+
+DESCRIPTION
+    Recursively search through directories and select specific file(s). The sel-
+    ected file(s) will be opened in either Vi, Vim, or NeoVim. Should more than
+    one of the aforementioned programs be installed, %s will prioritize them in
+    reverse order. Optionally, specify a search directory and / or expression to
+    be matched.
+
+    DIR specifies the directory to run %s in; the default is \$HOME.
+
+    '-- EXP' allows the user to specify multiple search expressions / filenames
+    as a space-separated list. If an expression / filename can be matched to a
+    file on the system, it is added to list of files that will be opened, each
+    file in its own buffer. If an expression / filename only has a single candi-
+    date, this is done automatically, otherwise fzf is used to allow the selec-
+    tion of a specific file.
+    For the time being, avoid using fzf with multi-select, as that may result in
+    unexpected behaviour.
+    Due to shell limitations, expressions / filenames containing spaces are
+    currently unsupported and should not be used!
+
+OPTIONS
+    -d, --depth INT
+      Takes a positive, non-zero Integer and uses it as the search depth. Using
+      a high search depth has the advantage of showing better search results in
+      deeply nested directory structures, but comes at the cost of a greater de-
+      lay between issuing the command and opening the desired file(s).
+      Default search depth is 10.
+
+    -e, --exclude FILE
+      Use FILE containing patterns to exclude files and directories from search
+      results. Patterns support globbing characters and should be separated by
+      newlines. Avoid prefixing patterns with '**/', as that's how they are
+      being matched internally and prefixing them as such would prevent exclu-
+      sion of all files / directories that are first-hand children of DIR.
+      Furthermore, patterns should consist of the shortest, unambiguous part of
+      the filenames / directories one wishes to exclude.
+
+      By default %s tries to source a file called 'exclude.nff', located in the
+      script's directory to filter unwanted search results. If one wants to not
+      exclude any results, ensure a file with aforementioned name does not exist
+      in the script's directory, or pass '-' as FILE to this option.
+
+      EXAMPLE:
+      Assume the contents of '/path/to/first/directory/' are to be discarded but
+      contents of '/path/to/second/directory/' are to be kept as search results.
+      To achieve this, put 'first/directory' in the pattern file. Alternatively,
+      if anything matching 'directory' is to be discarded just put 'directory'
+      in the pattern file.
+
+    -p, --pattern PATTERN
+      Use PATTERN to exclude files and directories from being matched. Can be
+      used more than once.
+      See -e for an example on proper PATTERN formatting.
+
+EXIT STATUS
+      0, on success.
+      1, on option error.
+      2, if EXP is used but no matching file is found (may be caused by shallow
+         search depth)
+      3, on dependency error.
+    130, on keyboard interrupt.
+
+DEPENDENCIES
+    fd          (tested with v.8.3.2)
+    fzf         (tested with v.0.30.0)
+    vi | (n)vim (any)
+
+VERSION
+    $Version
+
+AUTHOR(S)
+    $Authors
+" "$Program" "$Program" "$Program"
+}
+
+Warn() {
+  printf 'Warning: %s\n' "$1" 1>&2
+}
+Err() {
+  printf 'Error: %s\n' "$2" 1>&2
+  [ $1 -gt 0 ] && exit $1
+}
+
+unset Interrupt DependencyError VersionWarning DepthError DirError \
+  ExcludeFileError FileNotFoundWarning
+SigHandler() {
+  [ "$Interrupt"            = True ] && Err 130 "Keyboard Interrupt."
+
+  [ "$DependencyError"  = True ] && Err   3 "Dependency not met - $1."
+  [ "$VersionWarning"   = True ] && Warn "'$1' version ($2) is not verified to work."
+
+  [ "$DepthError"           = True ] \
+    && Err   1 "Depth has to be a positive, non-zero integer."
+  [ "$DirError"             = True ] && Err   1 "Directory does not exist '$1'."
+  [ "$ExcludeFileError"     = True ] && Err   1 \
+    "Pattern File '$1' doesn't exist, isn't a file, or doesn't have read permissions."
+  [ "$FileNotFoundWarning"  = True ] && Warn "File not found '$1' - skipping."
+}
+
+MissingDepCount=0; MissingDeps=''; Editor=''
+DepCheck() {
+  for Dep in fd fzf nvim; do
+    if ! command -v $Dep 1>/dev/null; then
+      MissingDepCount=$((MissingDepCount+1))
+      MissingDeps="$MissingDeps, $Dep"
+    fi
+  done
+
+  if ! (command -v vi 1>/dev/null || command -v vim 1>/dev/null \
+        || command -v nvim 1>/dev/null); then
+    MissingDepCount=$((MissingDepCount+1))
+    MissingDeps="$MissingDeps, vi | (n)vim"
+  fi
+
+  [ $MissingDepCount -gt 0 ] \
+    && DependencyError=True SigHandler "${MissingDeps#, }"
+  unset Dep MissingDeps MissingDepCount 
+
+  [ $(command -v nvim) ] && Editor='nvim'
+  [ -z $Editor ] && [ $(command -v vim) ] && Editor='vim'
+  [ -z $Editor ] && [ $(command -v vi) ]  && Editor='vi'
+}
+
+VersionCheck() {
+  FdPureVer=$(fd --version);   FdPureVer=${FdPureVer#fd }
+  FzfPureVer=$(fzf --version); FzfPureVer=${FzfPureVer% *}
+
+  Center=${FdPureVer#?.}; Center=${Center%.?}
+  FdVer=${FdPureVer%%.*}; FdVer=$FdVer$Center; FdVer=$FdVer${FdPureVer##*.}
+
+  Center=${FzfPureVer#?.}; Center=${Center%.?}
+  FzfVer=${FzfPureVer%%.*}; FzfVer=$FzfVer$Center; FzfVer=$FzfVer${FzfPureVer##*.}
+
+  [ $FdVer -lt 832 ]   && VersionWarning=True SigHandler fd $FdPureVer
+  [ $FzfVer -lt 0300 ] && VersionWarning=True SigHandler fzf $FzfPureVer
+
+  unset FdPureVer FzfPureVer FdVer FzfVer Center
+}
+
+DepCheck
+VersionCheck
+
+Depth=10
+Dir="$HOME"
+ExcludeFile="${0%/*}/exclude.nff"
+ExcludePattern=''
+Exp='. / '
+ExpList=''
+
+while [ -n "$1" ]; do
+  case "$1" in
+    --)
+      shift
+      for Exp in "$@"; do
+        [ "$ExpList" = "${ExpList%"$Exp"*}" ] && ExpList="$ExpList$Exp / "
+      done
+      break;;
+
+    -h|--help)
+      Usage; exit 0;;
+
+    -d|--depth)
+      if [ $2 -eq $2 ] 2>/dev/null && [ $2 -gt 0 ]; then
+        Depth=$2
+      else
+        DepthError=True SigHandler
+      fi
+      shift 2;;
+
+    -e|--exclude)
+      if [ "$2" = - ]; then
+        unset ExcludeFile
+      else
+        if [ ! -f "$2" ] || [ ! -r "$2" ]; then
+          ExcludeFileError=True SigHandler "$2"
+        fi
+        ExcludeFile="$2"
+      fi
+      shift 2;;
+
+    -p|--pattern)
+      Pattern=${2%/}
+      ExcludePattern="$ExcludePattern**/${Pattern#*/},"
+      unset Pattern
+      shift 2;;
+
+    -*)
+      Err 1 "Invalid option '$1'";;
+
+    *)
+      [ ! -d "$1" ] && DirError=True SigHandler "$1"
+      Dir="$1"
+      shift;;
+  esac
+done
+
+if [ -n "$ExcludePattern" ] || [ -n "$ExcludeFile" ]; then
+  ExcludeList="-E {"
+
+  [ -n "$ExcludePattern" ] && ExcludeList="$ExcludeList$ExcludePattern"
+
+  if [ -n "$ExcludeFile" ]; then
+    while IFS='' read -r File; do
+      File=${File%/}
+      ExcludeList="$ExcludeList**/${File#*/},"
+    done < "$ExcludeFile"
+  fi
+
+  ExcludeList="$ExcludeList}"
+  unset ExcludePattern ExcludeFile
+fi
+
+Files=''
+[ -z "$ExpList" ] && ExpList="$Exp"
+while [ -n "$ExpList" ]; do
+  Match="$(fd $ExcludeList -tf -H -d$Depth "${ExpList%% / *}" "$Dir" \
+    | fzf -e -0 -1)"
+
+  Exit=$?
+  [ $Exit -eq 1 ]   && FileNotFoundWarning=True SigHandler ${ExpList%% / *}
+  [ $Exit -eq 130 ] && Interrupt=True SigHandler
+
+  Files="$Files$Match "
+  [ "$ExpList" = "$Exp" ] && break
+
+  ExpList="${ExpList#* / }"
+done; Files="${Files% }"
+
+[ -n "$Files" ] && $Editor $Files || Err 2 'No file to open.'
+

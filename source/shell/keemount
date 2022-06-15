@@ -1,0 +1,56 @@
+#!/bin/sh
+# TODO:
+# test behaviour when USB does not have a label
+# allow use of options for overriding default DbPath and Label
+
+# AUTHOR: Nico Pareigis
+# Review the source code and dependencies before use!
+
+# DEPENDENCIES:
+#   keepass, udisks2 (tested with v.2.9.4-1), (as of now) drive needs a label
+# BEFORE RUNNING: modify 'Uuid' and 'DbPath' (second occurence) variables
+
+Umount=1;
+
+##### vvv #####
+Uuid="2D09-D357"
+##### ^^^ #####
+
+Device=$(lsblk --raw -o uuid,name,label | grep $Uuid); Device=${Device#* }
+Partition="/dev/${Device%% *}"
+Label=${Device##* }
+
+Mnt=$(mount | grep $Partition); Mnt=${Mnt#*on }; Mnt=${Mnt% type*}
+DbPath=${Mnt:-"/run/media/$USER/$Label"}
+
+######### v LEADING / IS MANDATORY v ######### 
+DbPath="$DbPath/6_KeePass/db/Database.kdbx"
+######### ^                        ^ ######### 
+
+for arg in "$@"; do
+	case "$arg" in
+		-d|--dont) Umount=0; shift;;
+		*) echo "Bad option \"$arg\"!"; exit 1;;
+	esac
+done
+
+if [ -z "$Device" ]; then
+	echo "USB not connected!"
+	exit 1
+fi
+
+if [ -z $Mnt ]; then
+	udisksctl mount --block-device $Partition >/dev/null
+else
+	Umount=0
+	echo "USB already mounted - opening database."
+	sleep 0.3s
+fi
+
+keepass "$DbPath"
+
+if [ $Umount -eq 1 ]; then
+	udisksctl unmount --block-device $Partition  >/dev/null
+	echo "Unmount successful."
+fi
+
