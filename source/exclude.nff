@@ -1,11 +1,14 @@
 .cache
 .cargo
-.config/Code
+.config/Code*
 .config/discord
-vim-polyglot
+.git
 .local
 .mozilla
 .mysql
 .librewolf
 .vscode*
+.zsh
+Games
 Pictures
+vim-polyglot
