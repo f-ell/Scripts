@@ -1,0 +1,13 @@
+#!/bin/sh
+Program="$1"
+Process=$(pgrep "$Program")
+
+[ $Process ] && [ "$Program" = "gimp" ] && Program="GNU Image Manipulation Program"
+
+if [ -z $Process ]; then
+  "$Program"
+else
+   Wid=$(wmctrl -l | grep -i "$Program")
+   Wid=${Wid% *}
+   wmctrl -ia "$Wid"
+fi

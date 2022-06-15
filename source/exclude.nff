@@ -1,0 +1,11 @@
+.cache
+.cargo
+.config/Code
+.config/discord
+vim-polyglot
+.local
+.mozilla
+.mysql
+.librewolf
+.vscode*
+Pictures
