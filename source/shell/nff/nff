@@ -1,6 +1,4 @@
 #!/bin/sh
-# TODO
-# Add '-p .git' by default and implement -n | -g | --no-git-ignore option
 
 Authors='Nico Pareigis'
 Program=${0##*/}
@@ -64,6 +62,13 @@ OPTIONS
       if anything matching 'directory' is to be discarded just put 'directory'
       in the pattern file.
 
+    -g, --no-git-ignore
+      %s excludes any Git directories it encounters during the search. Using
+      this option prevents those matches from being removed from search re-
+      sults. Can be used in combination with patterns, specified either in a
+      separate file, or on the command line (see -e and -p respectively), to
+      only show specific git-related directories.
+
     -p, --pattern PATTERN
       Use PATTERN to exclude files and directories from being matched. Can be
       used more than once.
@@ -72,8 +77,8 @@ OPTIONS
 EXIT STATUS
       0, on success.
       1, on option error.
-      2, if EXP is used but no matching file is found (may be caused by shallow
-         search depth)
+      2, when no file is found, which is most likely caused by a poor EXP,
+         accompanied by a shallow search depth
       3, on dependency error.
     130, on keyboard interrupt.
 
@@ -87,7 +92,7 @@ VERSION
 
 AUTHOR(S)
     $Authors
-" "$Program" "$Program" "$Program"
+" "$Program" "$Program" "$Program" "$Program"
 }
 
 Warn() {
@@ -163,6 +168,7 @@ ExcludeFile="${0%/*}/exclude.nff"
 ExcludePattern=''
 Exp='. / '
 ExpList=''
+GitIgnore='**/.git*,'
 
 while [ -n "$1" ]; do
   case "$1" in
@@ -195,6 +201,10 @@ while [ -n "$1" ]; do
       fi
       shift 2;;
 
+    -g|--no-git-ignore)
+      unset GitIgnore
+      shift;;
+
     -p|--pattern)
       Pattern=${2%/}
       ExcludePattern="$ExcludePattern**/${Pattern#*/},"
@@ -211,10 +221,11 @@ while [ -n "$1" ]; do
   esac
 done
 
-if [ -n "$ExcludePattern" ] || [ -n "$ExcludeFile" ]; then
+if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$ExcludeFile" ]; then
   ExcludeList="-E {"
 
-  [ -n "$ExcludePattern" ] && ExcludeList="$ExcludeList$ExcludePattern"
+  [ -n "$GitIgnore" ]       && ExcludeList="$ExcludeList$GitIgnore"
+  [ -n "$ExcludePattern" ]  && ExcludeList="$ExcludeList$ExcludePattern"
 
   if [ -n "$ExcludeFile" ]; then
     while IFS='' read -r File; do
