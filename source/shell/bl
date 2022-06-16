@@ -1,8 +1,11 @@
 #!/bin/sh
+# NAME
+#   bl - set monitor brightness with brightnessctl
+# SYNOPSIS:
+#   /path/to/script u|d|s 0-100
+#   u -> up, d -> down, s -> set brightness value in percent
 # DEPENDENCIES
 #   brightnessctl
-# SYNOPSIS:
-#   /path/to/script u|d|s (up|down|set) [0-100] {value in percent}
 
 i=; Inc=${2:-10}; Bctl='brightnessctl -q'
 case $1 in

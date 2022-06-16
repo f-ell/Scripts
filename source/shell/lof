@@ -1,4 +1,11 @@
 #!/bin/sh
+# NAME
+#   lof - launch (if not running) or focus application (if running)
+# SYNOPSIS
+#   /path/to/script <application name>
+# DEPENDENCIES
+#   grep, pgrep, wmctrl
+
 Program="$1"
 Process=$(pgrep "$Program")
 
