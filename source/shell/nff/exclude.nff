@@ -2,7 +2,6 @@
 .cargo
 .config/Code*
 .config/discord
-.git
 .local
 .mozilla
 .mysql
