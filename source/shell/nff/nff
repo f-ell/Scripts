@@ -14,7 +14,7 @@ SYNOPSIS
     $Program [OPTS] [DIR] [-- EXP]
 
 DESCRIPTION
-    Recursively search through directories and select specific file(s). The sel-
+    Recursively search through directories and select one or more files. The sel-
     ected file(s) will be opened in either Vi, Vim, or NeoVim. Should more than
     one of the aforementioned programs be installed, %s will prioritize them in
     reverse order. Optionally, specify a search directory and / or expression to
@@ -23,11 +23,11 @@ DESCRIPTION
     DIR specifies the directory to run %s in; the default is \$HOME.
 
     '-- EXP' allows the user to specify multiple search expressions / filenames
-    as a space-separated list. If an expression / filename can be matched to a
-    file on the system, it is added to list of files that will be opened, each
-    file in its own buffer. If an expression / filename only has a single candi-
-    date, this is done automatically, otherwise fzf is used to allow the selec-
-    tion of a specific file.
+    as a space-separated list. If %s finds a file matching the expression the
+    file is added to a list; each file in the list will later be opened in its
+    own buffer. If a match only has a single candidate, this is done automatica-
+    lly, otherwise fzf is used to allow the selection of a specific file.
+
     For the time being, avoid using fzf with multi-select, as that may result in
     unexpected behaviour.
     Due to shell limitations, expressions / filenames containing spaces are
@@ -92,7 +92,7 @@ VERSION
 
 AUTHOR(S)
     $Authors
-" "$Program" "$Program" "$Program" "$Program"
+" "$Program" "$Program" "$Program" "$Program" "$Program"
 }
 
 Warn() {
