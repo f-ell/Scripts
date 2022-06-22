@@ -21,7 +21,6 @@ my $PrevTotal = $PrevLoad + $PrevFields[4];
 my $NewTotal  = $NewLoad  + $NewFields[4];
 my $Cpu = 100.0 * ($NewLoad - $PrevLoad) / ($NewTotal - $PrevTotal);
 
-# my ($Mem) = `free -m` =~ /Mem:\s+\d+\s+(\d+)/;
 open(FH, '<', MEMINFO) or die("$!");
   my ($MemTotal) = <FH> =~ /MemTotal:\s+(\d+) kB/;
   <FH>;
