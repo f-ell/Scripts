@@ -2,7 +2,7 @@
 
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.2.8
+Version=0.2.9
 
 Usage() {
 printf "
@@ -23,13 +23,17 @@ DESCRIPTION
     DIR specifies the directory to run %s in; the default is \$HOME.
 
     '-- EXP' allows the user to specify multiple search expressions / filenames
-    as a space-separated list. If %s finds a file matching the expression the
+    as a space-separated list. If %s finds a file matching the expression that
     file is added to a list; each file in the list will later be opened in its
     own buffer. If a match only has a single candidate, this is done automatica-
     lly, otherwise fzf is used to allow the selection of a specific file.
 
-    For the time being, avoid using fzf with multi-select, as that may result in
-    unexpected behaviour.
+    The Script uses 'v2' as the scoring algorithm and sets its own
+    FZF_DEFAULT_OPTS variable to provide as simple of an interface as possible.
+    As such, there is currently no support for fzf's colouring-, multi-select-,
+    or other, more advanced, functionality.
+
+    IMPORTANT NOTE:
     Due to shell limitations, expressions / filenames containing spaces are
     currently unsupported and should not be used!
 
@@ -51,7 +55,7 @@ OPTIONS
       the filenames / directories one wishes to exclude.
 
       By default %s tries to source a file called 'exclude.nff', located in the
-      script's directory to filter unwanted search results. If one wants to not
+      script's directory, to filter unwanted search results. If one wants to not
       exclude any results, ensure a file with aforementioned name does not exist
       in the script's directory, or pass '-' as FILE to this option.
 
@@ -63,21 +67,22 @@ OPTIONS
       in the pattern file.
 
     -g, --no-git-ignore
-      %s excludes any Git directories it encounters during the search. Using
-      this option prevents those matches from being removed from search re-
-      sults. Can be used in combination with patterns, specified either in a
-      separate file, or on the command line (see -e and -p respectively), to
-      only show specific git-related directories.
+      %s excludes any file / directory matching '.git*' that it encounters du-
+      ring the search. Using this option prevents those matches from being re-
+      moved from search results.
+      Can be used in combination with patterns, specified either in a separate
+      file, or on the command line (see -e and -p respectively), to only show
+      specific git-related results.
 
     -p, --pattern PATTERN
-      Use PATTERN to exclude files and directories from being matched. Can be
-      used more than once.
+      Use PATTERN to exclude files / directories from being matched. Can be used
+      more than once.
       See -e for an example on proper PATTERN formatting.
 
 EXIT STATUS
       0, on success.
       1, on option error.
-      2, when no file is found, which is most likely caused by a poor EXP,
+      2, when no file is found, which is most likely to be caused by a poor EXP,
          accompanied by a shallow search depth
       3, on dependency error.
     130, on keyboard interrupt.
@@ -162,6 +167,8 @@ VersionCheck() {
 DepCheck
 VersionCheck
 
+FZF_DEFAULT_OPTS='-i --tiebreak=begin --reverse --prompt="" --height=20%
+--no-color --no-info'
 Depth=10
 Dir="$HOME"
 ExcludeFile="${0%/*}/exclude.nff"
@@ -241,7 +248,7 @@ fi
 Files=''
 [ -z "$ExpList" ] && ExpList="$Exp"
 while [ -n "$ExpList" ]; do
-  Match="$(fd $ExcludeList -tf -H -d$Depth "${ExpList%% / *}" "$Dir" \
+  Match="$(fd $ExcludeList -tf -H -d$Depth -- "${ExpList%% / *}" "$Dir" \
     | fzf -e -0 -1)"
 
   Exit=$?

@@ -1,3 +1,4 @@
+exclude.nff
 .cache
 .cargo
 .config/Code*
