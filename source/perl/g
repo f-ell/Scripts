@@ -1,0 +1,198 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+
+# TODO: add -r option for git rm
+
+my $Author    = 'Nico Pareigis';
+my ($Program) = $0 =~ m{^.*/(\w+)$};
+my $Version   = '0.0.1';
+
+my $Usage = <<EOF
+NAME
+    $Program - shorthands for git commands
+
+SYNOPSIS
+    $Program [OPTS] [-- FILES]
+
+DESCRIPTION
+    $Program aims to provide some shorthands for basic git operations. It does
+    not aim to support all of git's features or functionality.
+    Running $Program without any options runs 'git status' on either the entire
+    repository, or only on FILES, if any are specified.
+
+OPTIONS
+    -h, --help
+      Prints this help information.
+
+    a -- FILES
+      Runs 'git add' on FILES.
+
+    c ['commit msg' ['secondary commit msg']] -- FILES
+      Runs 'git commit' on FILES. Optionally takes one or two commit messages.
+      The second commit message acts as if it were passed as a second '-m msg'
+      to git.
+
+      ---
+      NOT PROPERLY IMPLEMENTED YET. DOES NOT WORK!
+      ---
+
+    f
+      Runs 'git fetch' on the current repository.
+
+    s [sl] [-- FILES]
+      Runs 'git status' on the current repository, or on FILES, if any are spe-
+      cified. The options 's' (-s, default) and 'l' (--long) dictate the listing
+      format.
+
+    pl [nr]
+      Runs 'git pull' on the current repository. The options 'n' (--no-rebase,
+      default) and 'r' (--rebase) dictate whether or not git should rebase.
+
+    ps
+      Runs 'git push' on the current repository.
+
+    re -- FILES
+      Runs 'git restore --staged' on staged FILES.
+
+    rm [cn] -- FILES
+      Runs 'git rm' on FILES. The options 'c' (--cached, default) and 'n' ()
+      dictate whether or not removed files should only be removed from the sta-
+      ging area or completely removed from the disk.
+
+EXIT STATUS
+    0, on success
+    1, on option error
+    2, when trying to run outside of a git repository
+    3, on dependency error
+
+DEPENDENCIES
+    git
+
+VERSION
+    $Version
+
+AUTHOR(S)
+    $Author
+EOF
+;
+
+my sub Err {
+  printf STDERR "Error: %s\n", $_[1];
+  exit($_[0]) if $_[0] > 0;
+}
+
+
+system('command -v git 1>/dev/null 2>&1') == 0
+  or die(Err(3, 'Dependency not met - git'));
+system('git branch --show-current 1>/dev/null 2>&1') == 0
+  or die(Err(2, 'Not running in a git repository!'));
+
+
+my $Action  = '';
+my $Special = '';
+my $Files   = '';
+my $FilesRequired = $ARGV[0] =~ /[ac]|re|rm/ if defined $ARGV[0];
+
+while (scalar @ARGV > 0) {
+  if ($ARGV[0] =~ /^(-h|--help)$/) {
+    printf STDOUT "$Usage\n";
+    exit(0);
+  }
+
+  elsif ($ARGV[0] =~ /^--$/) {
+    shift;
+    foreach (@ARGV) {
+      $_ =~ s/ /\\ /;
+      $Files = $Files.$_.' ';
+    }
+    last;
+  }
+
+  elsif ($ARGV[0] =~ /^a$/) {
+    $Action = 'add';
+    shift;
+  }
+
+  elsif ($ARGV[0] =~ /^c$/) { # allow use of second '-m' for sub-messages
+    Err(12, 'Not properly implemented yet! Please refrain from using for the time being.');
+    $Action   = 'commit';
+    shift;
+    my $String  = join(' ', @ARGV);
+
+    # /\w+\s+--(\s+\w+)+$/                        comm + file
+    # /^\s*--(\s+\w+)+$/                          file
+    # /^(\s*\w+)+$/                               comm
+    # $String =~ /(\w+\s+)+\s+(--(?:\s+\w+)+)?$/; all
+    # $String =~ /^(.*)\s+(--)/;                  old
+
+    # Err(1, 'No filename(s) specified!') if !$2;
+
+    # $Special    = "-m '$1'" if $1;
+
+    # $String =~ /^.*(-- .*)/;
+    # @ARGV = split(' ', $1) if $1;
+
+    # if ($String =~ /^(\s*\w+)+(?:\s+--\s+.*)?/) { # needs alternative -- file
+    # if ($String =~ /^\s*((?:'|")(?:.*)+(?:'|"))*\s+(--\s+.*)?/) {
+    if ($String =~ /^\s*((?:[^-])*)\s+(--\s+.*)?/) {
+      my $Special = $1;
+    # }
+    # if ($String =~ /^\s*--(\s+\w+)+$/) {
+      @ARGV = split(' ', "$2");
+    }
+  }
+
+  elsif ($ARGV[0] =~ /^f$/) {
+    $Action = 'fetch';
+    last;
+  }
+
+  elsif ($ARGV[0] =~ /^s$/) {
+    $Action   = 'status';
+    $Special  = '-s';
+    shift                         if defined $ARGV[1] and $ARGV[1] eq 's';
+    shift and $Special = '--long' if defined $ARGV[1] and $ARGV[1] eq 'l';
+    shift;
+  }
+
+  elsif ($ARGV[0] =~ /^pl$/) {
+    $Action   = 'pull';
+    $Special  = '--no-rebase';
+    shift                     if defined $ARGV[1] and $ARGV[1] eq 'n';
+    shift and $Special = '-r' if defined $ARGV[1] and $ARGV[1] eq 'r';
+    shift;
+  }
+
+  elsif ($ARGV[0] =~ /^ps$/) {
+    $Action = 'push';
+    last;
+  }
+
+  elsif ($ARGV[0] =~ /^re$/) {
+    $Action   = 'restore';
+    $Special  = '--staged';
+    shift;
+  }
+
+  elsif ($ARGV[0] =~ /^rm$/) {
+    $Action   = 'remove';
+    $Special  = '--cached';
+    shift                     if defined $ARGV[1] and $ARGV[1] eq 'c';
+    shift and $Special  = ''  if defined $ARGV[1] and $ARGV[1] eq 'n';
+    shift;
+  }
+
+  Err(1, "Illegal argument - $ARGV[0]")
+    if defined $ARGV[0] and $ARGV[0] ne '--';
+}
+$Action = 'status', $Special = '-s' if !$Action;
+
+Err(1, 'No filename(s) specified!') if $FilesRequired and !$Files;
+unless ($Action eq 'status') { $Files = '' if !$FilesRequired and $Files; }
+
+# # #
+# printf "\nFiles: $Files\nAction: $Action\nSpecial: $Special\n\n";
+# # #
+
+system("git $Action $Special $Files");
