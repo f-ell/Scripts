@@ -28,10 +28,10 @@ DESCRIPTION
     own buffer. If a match only has a single candidate, this is done automatica-
     lly, otherwise fzf is used to allow the selection of a specific file.
 
-    The Script uses 'v2' as the scoring algorithm and sets its own
+    The Script uses fzf's 'v2' scoring algorithm and temporarily sets its own
     FZF_DEFAULT_OPTS variable to provide as simple of an interface as possible.
-    As such, there is currently no support for fzf's colouring-, multi-select-,
-    or other, more advanced, functionality.
+    As such, there is currently no support for any colouring-, multi-select-,
+    or other, more advanced, options.
 
     IMPORTANT NOTE:
     Due to shell limitations, expressions / filenames containing spaces are
