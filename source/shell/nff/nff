@@ -66,6 +66,10 @@ OPTIONS
       if anything matching 'directory' is to be discarded just put 'directory'
       in the pattern file.
 
+      The default 'exclude.nff' in this repository should give a good idea of
+      how the file is structured, as well as provide a sane default setup that
+      can easily be expanded upon.
+
     -g, --no-git-ignore
       %s excludes any file / directory matching '.git*' that it encounters du-
       ring the search. Using this option prevents those matches from being re-

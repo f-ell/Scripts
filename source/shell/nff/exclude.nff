@@ -1,14 +1,5 @@
 exclude.nff
 .cache
-.cargo
-.config/Code*
-.config/discord
 .local
 .mozilla
-.mysql
 .librewolf
-.vscode*
-.zsh
-Games
-Pictures
-vim-polyglot
