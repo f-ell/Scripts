@@ -2,6 +2,8 @@
 use warnings;
 use strict;
 
+# NOTE:
+#
 # TODO:
 # add -r option for git rm
 # add git-diff as 'd'
@@ -9,7 +11,7 @@ use strict;
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(\w+)$};
-my $Version   = '0.0.3';
+my $Version   = '0.0.4';
 
 sub Usage {
 printf <<EOF
@@ -27,17 +29,17 @@ DESCRIPTION
 
 OPTIONS
     D
-      Run $Program in debug / dry-run mode. Prints out relevant information, but
-      doesn't run the actual git command.
+      Run $Program in debug / dry-run mode. Print relevant information, but
+      don't run the actual git command.
 
     [-]h
-      Prints this help information and exits.
+      Print this help information and exit.
 
     a -- FILES
-      Runs 'git add' on FILES.
+      Run 'git add' on FILES.
 
     c ['commit msg' ['secondary commit msg']] -- FILES
-      Runs 'git commit' on FILES. Optionally takes one or two commit messages.
+      Run 'git commit' on FILES. Optionally takes one or two commit messages.
       The second commit message acts as if it were passed as a second '-m msg'
       to git.
 
@@ -46,28 +48,29 @@ OPTIONS
       ---
 
     f
-      Runs 'git fetch' on the current repository.
+      Run 'git fetch' on the current repository.
 
-    s [sl] [-- FILES]
-      Runs 'git status' on the current repository, or on FILES, if any are spe-
-      cified. The options 's' (-s, default) and 'l' (--long) dictate the listing
-      format.
+    s [slc] [-- FILES]
+      Run 'git status' on the current repository, or on FILES, if any are spe-
+      cified. 's' (-s, default) and 'l' (--long) dictate the listing format. 'c'
+      (as in 'commits') shows the branch's status compared to upstream.
 
     pl [nr]
-      Runs 'git pull' on the current repository. The options 'n' (--no-rebase,
-      default) and 'r' (--rebase) dictate whether or not git should rebase.
+      Run 'git pull' on the current repository. 'n' (--no-rebase, default) and
+      'r' (--rebase) dictate whether or not git should rebase already commited
+      changes.
 
     ps
-      Runs 'git push' on the current repository.
+      Run 'git push' on the current repository.
 
     re -- FILES
-      Runs 'git restore --staged' on staged FILES.
+      Run 'git restore --staged' on staged FILES.
 
     rm [cn] [r] -- FILES
-      Runs 'git rm' on FILES. The options 'c' (--cached, default) and 'n' ()
-      dictate whether or not removed files should only be removed from the sta-
-      ging area or completely removed from the disk. The option 'r' (-r) allows
-      recursive removal of entire directories.
+      Run 'git rm' on FILES. 'c' (--cached, default) and 'n' (as in 'not cached')
+      dictate whether or not git should remove files only from the index, or if
+      they should be completely removed from the disk. 'r' (-r) allows recursive
+      removal of entire directory structures (USE WITH CAUTION!).
 
 EXIT STATUS
     0, on success
@@ -177,8 +180,19 @@ while (scalar @ARGV > 0) {
     unless (!defined $ARGV[1]) {
       if ($ARGV[1] eq 's') {
         shift;
-      } elsif ($ARGV[1] eq 'l') {
+      }
+      elsif ($ARGV[1] eq 'l') {
         $Special = '--long';
+        shift;
+      }
+      elsif ($ARGV[1] eq 'c') {
+        `git status --long --ahead-behind` =~ /(Your branch is .*\.)/;
+        unless ($Debug) {
+          printf $1."\n";
+          exit(0);
+        } else {
+          $Special = 'Commit status.';
+        }
         shift;
       }
     }
@@ -191,7 +205,8 @@ while (scalar @ARGV > 0) {
     unless (!defined $ARGV[1]) {
       if ($ARGV[1] eq 'n') {
         shift;
-      } elsif ($ARGV[1] eq 'r') {
+      }
+      elsif ($ARGV[1] eq 'r') {
         shift;
         $Special = '--rebase';
       }
@@ -216,10 +231,12 @@ while (scalar @ARGV > 0) {
     unless (!defined $ARGV[1]) {
       if ($ARGV[1] eq 'c') {
         shift;
-      } elsif ($ARGV[1] eq 'n') {
+      }
+      elsif ($ARGV[1] eq 'n') {
         $Special = '';
         shift;
       }
+
       if (defined $ARGV[1] and $ARGV[1] eq 'r') {
         $Special = $Special.' -r';
         shift;
