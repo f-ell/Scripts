@@ -9,7 +9,7 @@ use strict;
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(\w+)$};
-my $Version   = '0.0.2';
+my $Version   = '0.0.3';
 
 sub Usage {
 printf <<EOF
@@ -30,7 +30,7 @@ OPTIONS
       Run $Program in debug / dry-run mode. Prints out relevant information, but
       doesn't run the actual git command.
 
-    [-]h, --help
+    [-]h
       Prints this help information and exits.
 
     a -- FILES
@@ -71,9 +71,10 @@ OPTIONS
 
 EXIT STATUS
     0, on success
-    1, on option error
-    2, when trying to run outside of a git repository
-    3, on dependency error
+    1, on argument error
+    2, when missing filename(s)
+    3, when trying to run outside of a git repository
+    4, on dependency error
 
 DEPENDENCIES
     git
@@ -98,8 +99,10 @@ my $FilesRequired = '';
 my sub SigHandler {
   Usage()                                     if $_[0] eq 'Usage';
 
-  Err(2, 'Not running in a git repository!')  if $_[0] eq 'RepoError';
-  Err(3, 'Dependency not met - '.$_[1])       if $_[0] eq 'DepError';
+  Err(1, 'Illegal argument - '.$_[1])         if $_[0] eq 'ArgErr';
+  Err(2, 'No filename(s) specified!')         if $_[0] eq 'FileErr';
+  Err(3, 'Not running in a git repository!')  if $_[0] eq 'RepoErr';
+  Err(4, 'Dependency not met - '.$_[1])       if $_[0] eq 'DepErr';
 
   $Debug         = 'True', shift @ARGV        if $_[0] eq 'DebugMode';
   $FilesRequired = 'True'                     if $_[0] eq 'FilesReq';
@@ -108,11 +111,11 @@ my sub SigHandler {
 
 # Dependency-, repo-, help-, debug mode, and required files checks
 system('command -v git 1>/dev/null 2>&1') == 0
-  or SigHandler('DepError', 'git');
+  or SigHandler('DepErr', 'git');
 system('git branch --show-current 1>/dev/null 2>&1') == 0
-  or SigHandler('RepoError');
+  or SigHandler('RepoErr');
 if (defined $ARGV[0]) {
-  SigHandler('Usage')     if $ARGV[0] =~ /^((-)?h|--help)$/;
+  SigHandler('Usage')     if $ARGV[0] =~ /^((-)?h|--help|-\?)$/;
   SigHandler('DebugMode') if $ARGV[0] eq 'D';
 }
 SigHandler('FilesReq') if defined $ARGV[0] and $ARGV[0] =~ /[ac]|re|rm/;
@@ -160,7 +163,7 @@ while (scalar @ARGV > 0) {
       $Special = "-m '$1'" if $1;
       @ARGV = split(' ', "$2");
     }
-    Err(1, 'No filename(s) specified!') if !$2;
+    SigHandler('FileErr') if !$2;
   }
 
   elsif ($ARGV[0] =~ /^f$/) {
@@ -225,8 +228,7 @@ while (scalar @ARGV > 0) {
     shift;
   }
 
-  Err(1, 'Illegal argument - '.$ARGV[0])
-    if defined $ARGV[0] and $ARGV[0] ne '--';
+  SigHandler('ArgErr', $ARGV[0]) if defined $ARGV[0] and $ARGV[0] ne '--';
 }
 
 # Set default $Action if no arguments were passed
@@ -235,7 +237,7 @@ $Action = 'status', $Special = '-s' if !$Action;
 # Throw error if $Action requires files but none were passed
 # or unset $Files if $Action doesn't require files but some were passed
 if ($FilesRequired and !$Files) {
-  Err(1, 'No filename(s) specified!');
+  SigHandler('FileErr');
 }
 if (!$FilesRequired and $Files) {
   $Files = '' unless $Action eq 'status';
