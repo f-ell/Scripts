@@ -21,17 +21,17 @@ SYNOPSIS
 
 DESCRIPTION
     $Program aims to provide some useful shorthands for basic git operations. It
-    does not aim to support all of git's features or functionality.
+    doesn't aim to support all of git's features or functionality.
     Running $Program without any options runs 'git status' on either the entire
     repository, or on FILES, if any are specified.
 
 OPTIONS
-    [-]h, --help
-      Prints this help information and exits.
-
     D
       Run $Program in debug / dry-run mode. Prints out relevant information, but
       doesn't run the actual git command.
+
+    [-]h, --help
+      Prints this help information and exits.
 
     a -- FILES
       Runs 'git add' on FILES.
@@ -42,7 +42,7 @@ OPTIONS
       to git.
 
       ---
-      NOT PROPERLY IMPLEMENTED YET. DOES NOT WORK!
+      PROVIDING A SECONDARY COMMIT MESSAGE DOES NOT WORK YET!
       ---
 
     f
@@ -242,7 +242,7 @@ if (!$FilesRequired and $Files) {
 }
 
 # Print debugging information if running in debug / dry-run mode
-if ($Debug eq 'True') {
+if ($Debug) {
   printf "Debug mode output:\n\n";
   printf "Action:  $Action\nSpecial: $Special\nFiles:   $Files\n";
   exit(0);
