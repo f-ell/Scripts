@@ -2,18 +2,22 @@
 use warnings;
 use strict;
 
-# TODO: add -r option for git rm
+# TODO:
+# add -r option for git rm
+# add git-diff as 'd'
+# allow use of second '-m' for sub-messages
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(\w+)$};
-my $Version   = '0.0.1';
+my $Version   = '0.0.2';
 
-my $Usage = <<EOF
+sub Usage {
+printf <<EOF
 NAME
     $Program - shorthands for git commands
 
 SYNOPSIS
-    $Program [OPTS] [-- FILES]
+    $Program [D] [OPTS] [-- FILES]
 
 DESCRIPTION
     $Program aims to provide some useful shorthands for basic git operations. It
@@ -23,7 +27,11 @@ DESCRIPTION
 
 OPTIONS
     [-]h, --help
-      Prints this help information.
+      Prints this help information and exits.
+
+    D
+      Run $Program in debug / dry-run mode. Prints out relevant information, but
+      doesn't run the actual git command.
 
     a -- FILES
       Runs 'git add' on FILES.
@@ -55,10 +63,11 @@ OPTIONS
     re -- FILES
       Runs 'git restore --staged' on staged FILES.
 
-    rm [cn] -- FILES
+    rm [cn] [r] -- FILES
       Runs 'git rm' on FILES. The options 'c' (--cached, default) and 'n' ()
       dictate whether or not removed files should only be removed from the sta-
-      ging area or completely removed from the disk.
+      ging area or completely removed from the disk. The option 'r' (-r) allows
+      recursive removal of entire directories.
 
 EXIT STATUS
     0, on success
@@ -76,36 +85,52 @@ AUTHOR(S)
     $Author
 EOF
 ;
+exit(0);
+}
 
 my sub Err {
   printf STDERR "Error: %s\n", $_[1];
   exit($_[0]) if $_[0] > 0;
 }
 
+my $Debug = '';
+my $FilesRequired = '';
+my sub SigHandler {
+  Usage()                                     if $_[0] eq 'Usage';
 
+  Err(2, 'Not running in a git repository!')  if $_[0] eq 'RepoError';
+  Err(3, 'Dependency not met - '.$_[1])       if $_[0] eq 'DepError';
+
+  $Debug         = 'True', shift @ARGV        if $_[0] eq 'DebugMode';
+  $FilesRequired = 'True'                     if $_[0] eq 'FilesReq';
+}
+
+
+# Dependency-, repo-, help-, debug mode, and required files checks
 system('command -v git 1>/dev/null 2>&1') == 0
-  or die(Err(3, 'Dependency not met - git'));
+  or SigHandler('DepError', 'git');
 system('git branch --show-current 1>/dev/null 2>&1') == 0
-  or die(Err(2, 'Not running in a git repository!'));
+  or SigHandler('RepoError');
+if (defined $ARGV[0]) {
+  SigHandler('Usage')     if $ARGV[0] =~ /^((-)?h|--help)$/;
+  SigHandler('DebugMode') if $ARGV[0] eq 'D';
+}
+SigHandler('FilesReq') if defined $ARGV[0] and $ARGV[0] =~ /[ac]|re|rm/;
 
 
+# Argument processing
 my $Action  = '';
 my $Special = '';
 my $Files   = '';
-my $FilesRequired = $ARGV[0] =~ /[ac]|re|rm/ if defined $ARGV[0];
 
 while (scalar @ARGV > 0) {
-  if ($ARGV[0] =~ /^((-)?h|--help)$/) {
-    printf STDOUT "$Usage\n";
-    exit(0);
-  }
-
-  elsif ($ARGV[0] =~ /^--$/) {
+  if ($ARGV[0] =~ /^--$/) {
     shift;
     foreach (@ARGV) {
       $_ =~ s/ /\\ /;
       $Files = $Files.$_.' ';
     }
+    $/ = ' '; chomp($Files);
     last;
   }
 
@@ -114,11 +139,8 @@ while (scalar @ARGV > 0) {
     shift;
   }
 
-  elsif ($ARGV[0] =~ /^c$/) { # allow use of second '-m' for sub-messages
-    Err(12, 'Not properly implemented yet! Please refrain from using for the time being.');
-    $Action   = 'commit';
-    shift;
-    my $String  = join(' ', @ARGV);
+  elsif ($ARGV[0] =~ /^c$/) {
+    # Err(12, 'Not properly implemented yet! Please refrain from using for the time being.');
 
     # /\w+\s+--(\s+\w+)+$/                        comm + file
     # /^\s*--(\s+\w+)+$/                          file
@@ -126,21 +148,19 @@ while (scalar @ARGV > 0) {
     # $String =~ /(\w+\s+)+\s+(--(?:\s+\w+)+)?$/; all
     # $String =~ /^(.*)\s+(--)/;                  old
 
-    # Err(1, 'No filename(s) specified!') if !$2;
-
-    # $Special    = "-m '$1'" if $1;
-
-    # $String =~ /^.*(-- .*)/;
-    # @ARGV = split(' ', $1) if $1;
-
     # if ($String =~ /^(\s*\w+)+(?:\s+--\s+.*)?/) { # needs alternative -- file
     # if ($String =~ /^\s*((?:'|")(?:.*)+(?:'|"))*\s+(--\s+.*)?/) {
-    if ($String =~ /^\s*((?:[^-])*)\s+(--\s+.*)?/) {
-      my $Special = $1;
-    # }
-    # if ($String =~ /^\s*--(\s+\w+)+$/) {
+    # if ($String =~ /^\s*((?:[^-])*)\s+(--\s+.*)?/) {
+
+    $Action   = 'commit';
+    shift;
+    my $String  = join(' ', @ARGV);
+
+    if ($String =~ /^(?:(.*)(?:\s+))?(--\s+.*)$/) {
+      $Special = "-m '$1'" if $1;
       @ARGV = split(' ', "$2");
     }
+    Err(1, 'No filename(s) specified!') if !$2;
   }
 
   elsif ($ARGV[0] =~ /^f$/) {
@@ -151,16 +171,28 @@ while (scalar @ARGV > 0) {
   elsif ($ARGV[0] =~ /^s$/) {
     $Action   = 'status';
     $Special  = '-s';
-    shift                         if defined $ARGV[1] and $ARGV[1] eq 's';
-    shift and $Special = '--long' if defined $ARGV[1] and $ARGV[1] eq 'l';
+    unless (!defined $ARGV[1]) {
+      if ($ARGV[1] eq 's') {
+        shift;
+      } elsif ($ARGV[1] eq 'l') {
+        $Special = '--long';
+        shift;
+      }
+    }
     shift;
   }
 
   elsif ($ARGV[0] =~ /^pl$/) {
     $Action   = 'pull';
     $Special  = '--no-rebase';
-    shift                     if defined $ARGV[1] and $ARGV[1] eq 'n';
-    shift and $Special = '-r' if defined $ARGV[1] and $ARGV[1] eq 'r';
+    unless (!defined $ARGV[1]) {
+      if ($ARGV[1] eq 'n') {
+        shift;
+      } elsif ($ARGV[1] eq 'r') {
+        shift;
+        $Special = '--rebase';
+      }
+    }
     shift;
   }
 
@@ -178,21 +210,42 @@ while (scalar @ARGV > 0) {
   elsif ($ARGV[0] =~ /^rm$/) {
     $Action   = 'remove';
     $Special  = '--cached';
-    shift                     if defined $ARGV[1] and $ARGV[1] eq 'c';
-    shift and $Special  = ''  if defined $ARGV[1] and $ARGV[1] eq 'n';
+    unless (!defined $ARGV[1]) {
+      if ($ARGV[1] eq 'c') {
+        shift;
+      } elsif ($ARGV[1] eq 'n') {
+        $Special = '';
+        shift;
+      }
+      if (defined $ARGV[1] and $ARGV[1] eq 'r') {
+        $Special = $Special.' -r';
+        shift;
+      }
+    }
     shift;
   }
 
-  Err(1, "Illegal argument - $ARGV[0]")
+  Err(1, 'Illegal argument - '.$ARGV[0])
     if defined $ARGV[0] and $ARGV[0] ne '--';
 }
+
+# Set default $Action if no arguments were passed
 $Action = 'status', $Special = '-s' if !$Action;
 
-Err(1, 'No filename(s) specified!') if $FilesRequired and !$Files;
-unless ($Action eq 'status') { $Files = '' if !$FilesRequired and $Files; }
+# Throw error if $Action requires files but none were passed
+# or unset $Files if $Action doesn't require files but some were passed
+if ($FilesRequired and !$Files) {
+  Err(1, 'No filename(s) specified!');
+}
+if (!$FilesRequired and $Files) {
+  $Files = '' unless $Action eq 'status';
+}
 
-# # #
-# printf "\nFiles: $Files\nAction: $Action\nSpecial: $Special\n\n";
-# # #
+# Print debugging information if running in debug / dry-run mode
+if ($Debug eq 'True') {
+  printf "Debug mode output:\n\n";
+  printf "Action:  $Action\nSpecial: $Special\nFiles:   $Files\n";
+  exit(0);
+}
 
 system("git $Action $Special $Files");
