@@ -16,4 +16,3 @@ handling.
 * [`sysload`](https://gitlab.com/fell_/Scripts/-/blob/master/source/perl/system_monitors/sysload)
 (Perl) - Simple script for measuring CPU and memory utilization
 
-test changes
