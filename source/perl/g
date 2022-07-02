@@ -5,9 +5,11 @@ use strict;
 # NOTE:
 #
 # TODO:
+# add git-branch as 'b'
 # add git-diff as 'd'
+#   perhaps use git-show instead
 # add git-merge as 'm'
-# add git-revert as 'r'
+# add git-checkout as 'ch'?
 # add git-switch as 'sw'
 # allow use of second '-m' for sub-messages
 
@@ -21,7 +23,7 @@ NAME
     $Program - shorthands for git commands
 
 SYNOPSIS
-    $Program [D] [OPTS [SUBOPTS]] [-- FILES|URL]
+    $Program [D] [OPTS [SUBOPTS]] [-- FILES|URL|COMMIT]
 
 DESCRIPTION
     $Program aims to provide some useful shorthands for basic git operations. It
@@ -41,9 +43,9 @@ OPTIONS
       Run 'git add' on FILES.
 
     c ['commit msg' ['secondary commit msg']] -- FILES
-      Run 'git commit' on FILES. Optionally takes one or two commit messages.
-      The second commit message acts as if it were passed as a second '-m msg'
-      to git.
+      Run 'git commit' on FILES.
+      Optionally takes one or two commit messages. The second commit message
+      acts as if it were passed as a second '-m msg' to git.
 
       ---
       PROVIDING A SECONDARY COMMIT MESSAGE DOES NOT WORK YET!
@@ -54,24 +56,30 @@ OPTIONS
 
     l [sl] [INT] [-- FILES]
       Run 'git log --abbrev-commit --no-decorate' on the current repository, or
-      on FILES, if any are specified. 's' (as in 'short' (i.e. --pretty=oneline),
-      default) and 'l' (as in 'long' (i.e. --pretty=medium) dictate the listing
-      format.
+      on FILES, if any are specified.
+      's' (as in 'short' (i.e. --pretty=oneline), default) and 'l' (as in 'long'
+      (i.e. --pretty=medium) dictate the listing format.
       Optionally takes an integer to specify the number of commits to show (de-
       fault is 4).
 
+    r [en] -- COMMIT
+      Run 'git revert' on COMMIT.
+      'e' (-e, default) and n (--no-edit) dictate whether or not the commit me-
+      ssage may be changed before the commit is reverted.
+
     s [slc] [-- FILES]
       Run 'git status' on the current repository, or on FILES, if any are spe-
-      cified. 's' (-s, default) and 'l' (--long) dictate the listing format. 'c'
-      (as in 'compare') shows the branch's status compared to upstream.
+      cified.
+      's' (-s, default) and 'l' (--long) dictate the listing format. 'c' (as in
+      'compare') shows the branch's status compared to upstream.
 
     cl -- URL
       Clone the repository located at URL.
 
     pl [nr]
-      Run 'git pull' on the current repository. 'n' (--no-rebase, default) and
-      'r' (--rebase) dictate whether or not git should rebase already commited
-      changes.
+      Run 'git pull' on the current repository.
+      'n' (--no-rebase, default) and 'r' (--rebase) dictate whether or not git
+      should rebase already commited changes.
 
     ps
       Run 'git push' on the current repository.
@@ -80,15 +88,16 @@ OPTIONS
       Run 'git restore --staged' on staged FILES.
 
     rm [cn] [r] -- FILES
-      Run 'git rm' on FILES. 'c' (--cached, default) and 'n' (as in 'not cached')
-      dictate whether or not git should remove files only from the index, or if
-      they should be completely removed from the disk. 'r' (-r) allows recursive
-      removal of entire directory structures (USE WITH CAUTION!).
+      Run 'git rm' on FILES.
+      'c' (--cached, default) and 'n' (as in 'not cached') dictate whether or
+      not git should remove files only from the index, or if they should be com-
+      pletely removed from the disk. 'r' (-r) allows recursive removal of entire
+      directory structures (USE WITH CAUTION!).
 
 EXIT STATUS
     0, on success
     1, on argument error
-    2, when missing filename(s) or URL
+    2, when missing filename, URL, or COMMIT
     3, when trying to run outside of a git repository
     4, on dependency error
 
@@ -113,15 +122,15 @@ my sub Err {
 my $Debug = '';
 my $TargetRequired = '';
 my sub SigHandler {
-  Usage()                                     if $_[0] eq 'Usage';
+  Usage()                                         if $_[0] eq 'Usage';
 
-  Err(1, 'Illegal argument - '.$_[1])         if $_[0] eq 'ArgErr';
-  Err(2, 'No filename(s) / URL specified!')   if $_[0] eq 'FileErr';
-  Err(3, 'Not running in a git repository!')  if $_[0] eq 'RepoErr';
-  Err(4, 'Dependency not met - '.$_[1])       if $_[0] eq 'DepErr';
+  Err(1, 'Illegal argument - '.$_[1])             if $_[0] eq 'ArgErr';
+  Err(2, 'No filename / URL / commit specified!') if $_[0] eq 'FileErr';
+  Err(3, 'Not running in a git repository!')      if $_[0] eq 'RepoErr';
+  Err(4, 'Dependency not met - '.$_[1])           if $_[0] eq 'DepErr';
 
-  $Debug          = 'True', shift @ARGV       if $_[0] eq 'DebugMode';
-  $TargetRequired = 'True'                    if $_[0] eq 'TargetReq';
+  $Debug          = 'True', shift @ARGV           if $_[0] eq 'DebugMode';
+  $TargetRequired = 'True'                        if $_[0] eq 'TargetReq';
 }
 
 
@@ -132,7 +141,7 @@ if (defined $ARGV[0]) {
   SigHandler('Usage')     if $ARGV[0] =~ /^((-)?h|--help|-\?)$/;
   SigHandler('DebugMode') if $ARGV[0] eq 'D';
 }
-SigHandler('TargetReq') if defined $ARGV[0] and $ARGV[0] =~ /^[ac]|cl|re|rm$/;
+SigHandler('TargetReq') if defined $ARGV[0] and $ARGV[0] =~ /^[acr]|cl|re|rm$/;
 
 
 # Argument processing
@@ -210,6 +219,23 @@ while (scalar @ARGV > 0) {
     shift;
   }
 
+  elsif ($ARGV[0] =~ /^r$/) {
+    $Action   = 'revert';
+    $Options  = '-e';
+
+    if (defined $ARGV[1]) {
+      if ($ARGV[1] eq 'e') {
+        shift;
+      }
+
+      elsif ($ARGV[1] eq 'n') {
+        $Options = '--no-edit';
+        shift;
+      }
+    }
+    shift;
+  }
+
   elsif ($ARGV[0] =~ /^s$/) {
     $Action   = 'status';
     $Options  = '-s';
@@ -225,7 +251,8 @@ while (scalar @ARGV > 0) {
       }
 
       elsif ($ARGV[1] eq 'c') {
-        `git status --long --ahead-behind 2>/dev/null` =~ /(Your branch is .*\.)/;
+        `git status --long --ahead-behind 2>/dev/null`
+          =~ /(Your branch is .*\.)/;
 
         unless ($Debug) {
           printf $1."\n";
