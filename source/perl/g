@@ -3,19 +3,22 @@ use warnings;
 use strict;
 
 # NOTE:
+# Command execution:
+#   Concatenating to string may be less efficient than in-place replacement of
+#   whitespace (i.e. C-style for).
 #
 # TODO:
-# add git-branch as 'b'
 # add git-diff as 'd'
-#   perhaps use git-show instead
-# add git-merge as 'm'
-# add git-checkout as 'ch'?
+#   perhaps use git-show instead 'sh'
+#
+# add git-branch as 'b'
+# add git-checkout as 'ch'
 # add git-switch as 'sw'
-# allow use of second '-m' for sub-messages
+# add git-merge as 'm'
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(\w+)$};
-my $Version   = '0.0.5';
+my $Version   = '0.1.2';
 
 sub Usage {
 printf <<EOF
@@ -23,13 +26,13 @@ NAME
     $Program - shorthands for git commands
 
 SYNOPSIS
-    $Program [D] [OPTS [SUBOPTS]] [-- FILES|URL|COMMIT]
+    $Program [D] [OPTS [SUBOPTS]] [-- FILE...|URL|COMMIT]
 
 DESCRIPTION
     $Program aims to provide some useful shorthands for basic git operations. It
     doesn't aim to support all of git's features or functionality.
     Running $Program without any options runs 'git status -s' on either the en-
-    tire repository, or on FILES, if any are specified.
+    tire repository, or on FILE, if any are specified.
 
 OPTIONS
     D
@@ -39,24 +42,21 @@ OPTIONS
     [-]h
       Print this help information and exit.
 
-    a -- FILES
-      Run 'git add' on FILES.
+    a -- FILE...
+      Run 'git add' on FILE.
 
-    c ['commit msg' ['secondary commit msg']] -- FILES
-      Run 'git commit' on FILES.
-      Optionally takes one or two commit messages. The second commit message
-      acts as if it were passed as a second '-m msg' to git.
-
-      ---
-      PROVIDING A SECONDARY COMMIT MESSAGE DOES NOT WORK YET!
-      ---
+    c ['commit msg' [/// 'secondary commit msg']] -- FILE...
+      Run 'git commit' on FILE.
+      Optionally takes one or two commit messages, where '///' acts as a sepa-
+      rator between the messages. The second commit message is passed as a sec-
+      ond '-m msg' to git.
 
     f
       Run 'git fetch' on the current repository.
 
-    l [sl] [INT] [-- FILES]
+    l [sl] [INT] [-- FILE]
       Run 'git log --abbrev-commit --no-decorate' on the current repository, or
-      on FILES, if any are specified.
+      on FILE, if any are specified. As normal, subsequent files are ignored.
       's' (as in 'short' (i.e. --pretty=oneline), default) and 'l' (as in 'long'
       (i.e. --pretty=medium) dictate the listing format.
       Optionally takes an integer to specify the number of commits to show (de-
@@ -64,17 +64,21 @@ OPTIONS
 
     r [en] -- COMMIT
       Run 'git revert' on COMMIT.
-      'e' (-e, default) and n (--no-edit) dictate whether or not the commit me-
+      'e' (-e, default) and 'n' (--no-edit) dictate whether or not the commit me-
       ssage may be changed before the commit is reverted.
 
-    s [slc] [-- FILES]
-      Run 'git status' on the current repository, or on FILES, if any are spe-
+    s [slc] [-- FILE...]
+      Run 'git status' on the current repository, or on FILE, if any are spe-
       cified.
       's' (-s, default) and 'l' (--long) dictate the listing format. 'c' (as in
       'compare') shows the branch's status compared to upstream.
 
     cl -- URL
       Clone the repository located at URL.
+
+    mv -- SOURCE... DEST
+      Rename SOURCE... to DEST | DEST/SOURCE... and add the renamed files to the
+      index.
 
     pl [nr]
       Run 'git pull' on the current repository.
@@ -84,11 +88,11 @@ OPTIONS
     ps
       Run 'git push' on the current repository.
 
-    re -- FILES
-      Run 'git restore --staged' on staged FILES.
+    re -- FILE...
+      Run 'git restore --staged' on staged FILE.
 
-    rm [cn] [r] -- FILES
-      Run 'git rm' on FILES.
+    rm [cn] [r] -- FILE
+      Run 'git rm' on FILE.
       'c' (--cached, default) and 'n' (as in 'not cached') dictate whether or
       not git should remove files only from the index, or if they should be com-
       pletely removed from the disk. 'r' (-r) allows recursive removal of entire
@@ -97,7 +101,7 @@ OPTIONS
 EXIT STATUS
     0, on success
     1, on argument error
-    2, when missing filename, URL, or COMMIT
+    2, when missing filename or similar
     3, when trying to run outside of a git repository
     4, on dependency error
 
@@ -120,43 +124,64 @@ my sub Err {
 }
 
 my $Debug = '';
-my $TargetRequired = '';
+my @Optional  = ( 'l', 's', 'd', 'sh',); # diff / show added in advance
+my @Requires  = ( 'a', 'c', 'r', 'cl', 'mv', 're', 'rm',);
+my $TargetOpt = '';
+my $TargetReq = '';
+
 my sub SigHandler {
-  Usage()                                         if $_[0] eq 'Usage';
+  Usage()                                     if $_[0] eq 'Usage';
 
-  Err(1, 'Illegal argument - '.$_[1])             if $_[0] eq 'ArgErr';
-  Err(2, 'No filename / URL / commit specified!') if $_[0] eq 'FileErr';
-  Err(3, 'Not running in a git repository!')      if $_[0] eq 'RepoErr';
-  Err(4, 'Dependency not met - '.$_[1])           if $_[0] eq 'DepErr';
+  Err(1, 'Illegal argument - '.$_[1])         if $_[0] eq 'ArgErr';
 
-  $Debug          = 'True', shift @ARGV           if $_[0] eq 'DebugMode';
-  $TargetRequired = 'True'                        if $_[0] eq 'TargetReq';
+  Err(2, 'No commit specified!')              if $_[0] eq 'CommErr';
+  Err(2, 'No filename specified!')            if $_[0] eq 'FileErr';
+  Err(2, 'Missing destination!')              if $_[0] eq 'MvDErr';
+  Err(2, 'No URL specified!')                 if $_[0] eq 'URLErr';
+
+  Err(3, 'Not running in a git repository!')  if $_[0] eq 'RepoErr';
+  Err(4, 'Dependency not met - '.$_[1])       if $_[0] eq 'DepErr';
+
+  $Debug = 'True', shift @ARGV if $_[0] eq 'DebugMode';
 }
 
 
-# Dependency-, help-, debug mode, and required target checks
+# Dependency check
 system('command -v git 1>/dev/null 2>&1') == 0
   or SigHandler('DepErr', 'git');
+
+# Help-, debug-mode-, target-required-checks
 if (defined $ARGV[0]) {
-  SigHandler('Usage')     if $ARGV[0] =~ /^((-)?h|--help|-\?)$/;
-  SigHandler('DebugMode') if $ARGV[0] eq 'D';
+  SigHandler('Usage')         if $ARGV[0] =~ /^((-)?h|--help|-\?)$/;
+  SigHandler('DebugMode')     if $ARGV[0] =~ /^D$/;
+
+  # Needs secondary check, since 'D' causes shift
+  if (defined $ARGV[0]) {
+    foreach (@Requires) {
+      $TargetReq = 'True' if $ARGV[0] =~ /^$_$/;
+    }
+    foreach (@Optional) {
+      $TargetOpt = 'True' if $ARGV[0] =~ /^$_$/;
+    }
+  }
 }
-SigHandler('TargetReq') if defined $ARGV[0] and $ARGV[0] =~ /^[acr]|cl|re|rm$/;
+
+# Repository check
+unless ($Debug or (defined $ARGV[0] and $ARGV[0] =~ /^cl$/)) {
+  system('git branch --show-current 1>/dev/null 2>&1') == 0
+    or SigHandler('RepoErr');
+}
 
 
 # Argument processing
 my $Action  = '';
 my $Options = '';
-my $Target  = '';
+my @Targets = ();
 
 while (scalar @ARGV > 0) {
   if ($ARGV[0] =~ /^--$/) {
-    shift; foreach (@ARGV) {
-      $_ =~ s/ /\\ /;
-      $Target = $Target.$_.' ';
-    }
-
-    $/ = ' '; chomp($Target);
+    shift;
+    @Targets = @ARGV;
     last;
   }
 
@@ -166,26 +191,25 @@ while (scalar @ARGV > 0) {
   }
 
   elsif ($ARGV[0] =~ /^c$/) {
-    # Err(12, 'Not properly implemented yet! Please refrain from using for the time being.');
-
-    # /\w+\s+--(\s+\w+)+$/                        comm + file
-    # /^\s*--(\s+\w+)+$/                          file
-    # /^(\s*\w+)+$/                               comm
-    # $String =~ /(\w+\s+)+\s+(--(?:\s+\w+)+)?$/; all
-
-    # if ($String =~ /^(\s*\w+)+(?:\s+--\s+.*)?/) { # needs alternative -- file
-    # if ($String =~ /^\s*((?:'|")(?:.*)+(?:'|"))*\s+(--\s+.*)?/) {
-
-    $Action   = 'commit';
+    $Action       = 'commit';
+    my $FirstMsg  = '';
+    my $SecondMsg = '';
     shift;
 
     my $String  = join(' ', @ARGV);
-    if ($String =~ /^(?:(.*)(?:\s+))?(--\s+.*)$/) {
-      $Options = "-m '$1'" if $1;
-      @ARGV = split(' ', "$2");
+    if ($String =~ /^(?:(.*?)(?:\s+\/\/\/\s+(.*?))?\s+)?(--\s+.*)$/) {
+      $FirstMsg  = "-m '$1'"    if $1;
+      $SecondMsg  = " -m '$2'"  if $2;
+
+      $Options = $FirstMsg.$SecondMsg;
+      undef $FirstMsg;
+      undef $SecondMsg;
+      @ARGV = split(' ', "$3");
+      next;
     }
 
-    SigHandler('FileErr') if !$2;
+    # Required in case commit message is present but no files are passed.
+    SigHandler('FileErr');
   }
 
   elsif ($ARGV[0] =~ /^f$/) {
@@ -200,11 +224,10 @@ while (scalar @ARGV > 0) {
     my $Count     = ' -4';
 
     if (defined $ARGV[1]) {
-      if ($ARGV[1] eq 's') {
+      if ($ARGV[1] =~ /^s$/) {
         shift;
       }
-
-      elsif ($ARGV[1] eq 'l') {
+      elsif ($ARGV[1] =~ /^l$/) {
         $Display = 'medium';
         shift;
       }
@@ -216,6 +239,8 @@ while (scalar @ARGV > 0) {
     }
 
     $Options = $Options.$Display.$Count;
+    undef $Display;
+    undef $Count;
     shift;
   }
 
@@ -224,11 +249,10 @@ while (scalar @ARGV > 0) {
     $Options  = '-e';
 
     if (defined $ARGV[1]) {
-      if ($ARGV[1] eq 'e') {
+      if ($ARGV[1] =~ /^e$/) {
         shift;
       }
-
-      elsif ($ARGV[1] eq 'n') {
+      elsif ($ARGV[1] =~ /^n$/) {
         $Options = '--no-edit';
         shift;
       }
@@ -241,16 +265,14 @@ while (scalar @ARGV > 0) {
     $Options  = '-s';
 
     if (defined $ARGV[1]) {
-      if ($ARGV[1] eq 's') {
+      if ($ARGV[1] =~ /^s$/) {
         shift;
       }
-
-      elsif ($ARGV[1] eq 'l') {
+      elsif ($ARGV[1] =~ /^l$/) {
         $Options = '--long';
         shift;
       }
-
-      elsif ($ARGV[1] eq 'c') {
+      elsif ($ARGV[1] =~ /^c$/) {
         `git status --long --ahead-behind 2>/dev/null`
           =~ /(Your branch is .*\.)/;
 
@@ -269,16 +291,20 @@ while (scalar @ARGV > 0) {
     shift;
   }
 
+  elsif ($ARGV[0] =~ /^mv$/) {
+    $Action = 'mv';
+    shift;
+  }
+
   elsif ($ARGV[0] =~ /^pl$/) {
     $Action   = 'pull';
     $Options  = '--no-rebase';
 
     if (defined $ARGV[1]) {
-      if ($ARGV[1] eq 'n') {
+      if ($ARGV[1] =~ /^n$/) {
         shift;
       }
-
-      elsif ($ARGV[1] eq 'r') {
+      elsif ($ARGV[1] =~ /^r$/) {
         shift;
         $Options = '--rebase';
       }
@@ -298,20 +324,19 @@ while (scalar @ARGV > 0) {
   }
 
   elsif ($ARGV[0] =~ /^rm$/) {
-    $Action   = 'remove';
+    $Action   = 'rm';
     $Options  = '--cached';
 
     if (defined $ARGV[1]) {
-      if ($ARGV[1] eq 'c') {
+      if ($ARGV[1] =~ /^c$/) {
         shift;
       }
-
-      elsif ($ARGV[1] eq 'n') {
+      elsif ($ARGV[1] =~ /^n$/) {
         $Options = '';
         shift;
       }
 
-      if (defined $ARGV[1] and $ARGV[1] eq 'r') {
+      if (defined $ARGV[1] and $ARGV[1] =~ /^r$/) {
         $Options = $Options.' -r';
         shift;
       }
@@ -327,30 +352,48 @@ while (scalar @ARGV > 0) {
 $Action = 'status', $Options = '-s' if !$Action;
 
 
-# Throw error if $Action requires target but none was passed
-# or unset $Target if $Action doesn't require target but one was passed
-if ($TargetRequired and !$Target) {
-  SigHandler('FileErr');
+# Throw error if $Action requires targets but none were passed
+# or unset @Targets if $Action doesn't require targets but some were passed
+if ($TargetReq) {
+  if (!@Targets) {
+    SigHandler('CommErr') if $Action eq 'revert';
+    SigHandler('URLErr')  if $Action eq 'clone';
+    SigHandler('FileErr');
+  }
+  SigHandler('MvDErr') if $Action eq 'mv' and scalar @Targets == 1;
 }
-if (!$TargetRequired and $Target) {
-  $Target = '' unless $Action =~ /^status|log$/;
+
+if (!$TargetReq and @Targets) {
+  undef @Targets unless $TargetOpt or $Action eq 'status';
 }
 
 
-# Print debugging information if running in debug / dry-run mode
+# Target processing
+my $Targets = '';
+foreach (@Targets) {
+  $_ =~ s/ /\\ /;
+  $Targets = $Targets.$_.' ';
+}
+$/ = ' '; chomp($Targets);
+
+
+# Print debugging information when running in debug mode
 if ($Debug) {
+  $TargetReq = 'False' if !$TargetReq;
+  $TargetOpt = 'False' if !$TargetOpt;
+
   printf "Debug mode output:\n\n";
-  printf "Action:  $Action\nOptions: $Options\nTarget:  $Target\n";
+  printf "Action:  $Action\nOptions: $Options\n\n";
+  printf "TargetRequired: $TargetReq\nTargetOptional: $TargetOpt\nTarget(s):\n";
+
+  foreach (@Targets) {
+    printf "    $_\n";
+  }
+
+  printf "\nGit command to be run:\n  git $Action $Options -- $Targets\n";
   exit(0);
 }
 
 
-# Check if running in git repository (skip this when cloning)
-unless ($Action eq 'clone') {
-  system('git branch --show-current 1>/dev/null 2>&1') == 0
-    or SigHandler('RepoErr');
-}
-
-
 # Git command execution
-system("git $Action $Options -- $Target");
+system("git $Action $Options -- $Targets");
