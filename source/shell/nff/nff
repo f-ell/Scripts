@@ -252,7 +252,7 @@ fi
 Files=''
 [ -z "$ExpList" ] && ExpList="$Exp"
 while [ -n "$ExpList" ]; do
-  Match="$(fd $ExcludeList -tf -HL -d$Depth -- "${ExpList%% / *}" "$Dir" \
+  Match="$(fd $ExcludeList -tf -tl -H -d$Depth -- "${ExpList%% / *}" "$Dir" \
     | fzf -e -0 -1)"
 
   Exit=$?
