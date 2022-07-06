@@ -54,11 +54,12 @@ OPTIONS
     f
       Run 'git fetch' on the current repository.
 
-    l [sl] [INT] [-- FILE]
+    l [sl] [n] [INT] [-- FILE]
       Run 'git log --abbrev-commit --no-decorate' on the current repository, or
       on FILE, if any are specified. As normal, subsequent files are ignored.
       's' (as in 'short' (i.e. --pretty=oneline), default) and 'l' (as in 'long'
-      (i.e. --pretty=medium) dictate the listing format.
+      (i.e. --pretty=medium) dictate the listing format. 'n' (--name-only) dic-
+      tates whether or not the filenames belonging to commits should be shown.
       Optionally takes an integer to specify the number of commits to show (de-
       fault is 4).
 
@@ -222,6 +223,7 @@ while (scalar @ARGV > 0) {
     $Options      = '--abbrev-commit --no-decorate --pretty=';
     my $Display   = 'oneline';
     my $Count     = ' -4';
+    my $Name      = '';
 
     if (defined $ARGV[1]) {
       if ($ARGV[1] =~ /^s$/) {
@@ -232,15 +234,21 @@ while (scalar @ARGV > 0) {
         shift;
       }
 
+      if (defined $ARGV[1] and $ARGV[1] =~ /^n$/) {
+        $Name = ' --name-only';
+        shift;
+      }
+
       if (defined $ARGV[1] and $ARGV[1] =~ /^[1-9][0-9]*$/) {
         $Count = ' -'.$ARGV[1];
         shift;
       }
     }
 
-    $Options = $Options.$Display.$Count;
+    $Options = $Options.$Display.$Count.$Name;
     undef $Display;
     undef $Count;
+    undef $Name;
     shift;
   }
 
