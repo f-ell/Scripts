@@ -104,6 +104,7 @@ AUTHOR(S)
 " "$Program" "$Program" "$Program" "$Program" "$Program"
 }
 
+
 Warn() {
   printf 'Warning: %s\n' "$1" 1>&2
 }
@@ -111,6 +112,7 @@ Err() {
   printf 'Error: %s\n' "$2" 1>&2
   [ $1 -gt 0 ] && exit $1
 }
+
 
 unset Interrupt DependencyError VersionWarning DepthError DirError \
   ExcludeFileError FileNotFoundWarning
@@ -127,6 +129,7 @@ SigHandler() {
     "Pattern File '$1' doesn't exist, isn't a file, or doesn't have read permissions."
   [ "$FileNotFoundWarning"  = True ] && Warn "File not found '$1' - skipping."
 }
+
 
 MissingDepCount=0; MissingDeps=''; Editor=''
 DepCheck() {
@@ -168,9 +171,12 @@ VersionCheck() {
   unset FdPureVer FzfPureVer FdVer FzfVer Center
 }
 
+
 DepCheck
 VersionCheck
 
+
+# Argument processing
 FZF_DEFAULT_OPTS='-i --tiebreak=begin --reverse --prompt="" --height=20%
 --no-color --no-info'
 Depth=10
@@ -232,6 +238,8 @@ while [ -n "$1" ]; do
   esac
 done
 
+
+# Construct $ExcludeList including all files to ignore when searching
 if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$ExcludeFile" ]; then
   ExcludeList="-E {"
 
@@ -249,6 +257,8 @@ if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$ExcludeFile" ]; the
   unset ExcludePattern ExcludeFile
 fi
 
+
+# Construct $Files string to be opened
 Files=''
 [ -z "$ExpList" ] && ExpList="$Exp"
 while [ -n "$ExpList" ]; do
@@ -265,5 +275,7 @@ while [ -n "$ExpList" ]; do
   ExpList="${ExpList#* / }"
 done; Files="${Files% }"
 
+
+# Open files in $Editor
 [ -n "$Files" ] && $Editor $Files || Err 2 'No file to open.'
 
