@@ -1,0 +1,9 @@
+#!/bin/sh
+
+Cpu=`sensors | grep -A7 "Core 0" | sort -k3`
+Cpu=${Cpu%.* \(high*}; Cpu=${Cpu##*+}
+
+Gpu=`nvidia-smi -q -d TEMPERATURE | grep 'GPU Current Temp'`
+Gpu=${Gpu#*: }; Gpu=${Gpu% C}
+
+printf "CPU $Cpu°C | GPU $Gpu°C\n"
