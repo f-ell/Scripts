@@ -6,4 +6,4 @@ Cpu=${Cpu%.* \(high*}; Cpu=${Cpu##*+}
 Gpu=`nvidia-smi -q -d TEMPERATURE | grep 'GPU Current Temp'`
 Gpu=${Gpu#*: }; Gpu=${Gpu% C}
 
-printf "CPU $Cpu°C | GPU $Gpu°C\n"
+printf "CPU: $Cpu°C | GPU: $Gpu°C\n"
