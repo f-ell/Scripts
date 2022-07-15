@@ -7,12 +7,13 @@ use strict;
 #   Concatenating to string may be less efficient than in-place replacement of
 #   whitespace (i.e. C-style for).
 #
-# TODO:
-# add git-diff as 'd'
-#   perhaps use git-show instead 'sh'
+# Issue: git-diff throws error with '--$'
+#   Should be solved with new processing loop
 #
+# TODO:
 # add git-branch as 'b'
 # add git-checkout as 'ch'
+# add git-stash as 'st'
 # add git-switch as 'sw'
 # add git-merge as 'm'
 
@@ -26,50 +27,62 @@ NAME
     $Program - shorthands for git commands
 
 SYNOPSIS
-    $Program [D] [OPTS [SUBOPTS]] [-- FILE...|URL|COMMIT]
+    $Program [D] [OPTS [SUBOPTS]] [-- FILE...|COMMIT...|URL]
 
 DESCRIPTION
     $Program aims to provide some useful shorthands for basic git operations. It
-    doesn't aim to support all of git's features or functionality.
-    Running $Program without any options runs 'git status -s' on either the en-
-    tire repository, or on FILE, if any are specified.
+    doesn't try to support all of git's features or functionality.
+    Running $Program without any options runs 'git status -s' on the repository.
+
+    $Program currently provides shorthands for the following commands:
+    add, clone, commit, diff, fetch, log, move, pull, push, remove, restore,
+    revert, status
 
 OPTIONS
     D
-      Run $Program in debug / dry-run mode. Print relevant information, but
+      Run $Program in debug mode. Print relevant information to STDOUT, but
       don't run the actual git command.
 
     [-]h
       Print this help information and exit.
 
     a -- FILE...
-      Run 'git add' on FILE.
+      Run 'git add' on FILE... .
 
-    c ['commit msg' [/// 'secondary commit msg']] -- FILE...
-      Run 'git commit' on FILE.
-      Optionally takes one or two commit messages, where '///' acts as a sepa-
-      rator between the messages. The second commit message is passed as a sec-
-      ond '-m msg' to git.
+    c ['commit msg' [%% 'secondary commit msg']] -- FILE...
+      Run 'git commit' on FILE... .
+      Optionally takes one or two commit messages, where '%%' acts as a sepa-
+      rator between the two. The second commit message is passed as a second
+      '-m ...' to git.
+
+    d [COMMIT...] [-- FILE...]
+      Run 'git diff' on the repository, COMMIT..., or FILE... .
+
+      SYNOPSIS
+        '$Program d COMMIT...'  runs on COMMIT.
+        '$Program d -- FILE...' runs on FILE.
+        '$Program d COMMIT... -- FILE...' runs on the commit(s) with hash
+        COMMIT... on FILE..., if such a commit exists for FILE... .
 
     f
       Run 'git fetch' on the current repository.
 
-    l [sl] [n] [INT] [-- FILE]
+    l [sl] [n] [INT] [-- FILE...]
       Run 'git log --abbrev-commit --no-decorate' on the current repository, or
-      on FILE, if any are specified. As normal, subsequent files are ignored.
+      on FILE..., if any are specified. As normal, subsequent files are ignored.
       's' (as in 'short' (i.e. --pretty=oneline), default) and 'l' (as in 'long'
       (i.e. --pretty=medium) dictate the listing format. 'n' (--name-only) dic-
       tates whether or not the filenames belonging to commits should be shown.
       Optionally takes an integer to specify the number of commits to show (de-
       fault is 4).
 
-    r [en] -- COMMIT
-      Run 'git revert' on COMMIT.
+    r [en] -- COMMIT...
+      Run 'git revert' on COMMIT... .
       'e' (-e, default) and 'n' (--no-edit) dictate whether or not the commit me-
       ssage may be changed before the commit is reverted.
 
     s [slc] [-- FILE...]
-      Run 'git status' on the current repository, or on FILE, if any are spe-
+      Run 'git status' on the current repository, or on FILE..., if any are spe-
       cified.
       's' (-s, default) and 'l' (--long) dictate the listing format. 'c' (as in
       'compare') shows the branch's status compared to upstream.
@@ -90,10 +103,10 @@ OPTIONS
       Run 'git push' on the current repository.
 
     re -- FILE...
-      Run 'git restore --staged' on staged FILE.
+      Run 'git restore --staged' on staged FILE... .
 
-    rm [cn] [r] -- FILE
-      Run 'git rm' on FILE.
+    rm [cn] [r] -- FILE...
+      Run 'git rm' on FILE... .
       'c' (--cached, default) and 'n' (as in 'not cached') dictate whether or
       not git should remove files only from the index, or if they should be com-
       pletely removed from the disk. 'r' (-r) allows recursive removal of entire
@@ -125,7 +138,7 @@ my sub Err {
 }
 
 my $Debug = '';
-my @Optional  = ( 'l', 's', 'd', 'sh',); # diff / show added in advance
+my @Optional  = ( 'l', 's', 'd');
 my @Requires  = ( 'a', 'c', 'r', 'cl', 'mv', 're', 'rm',);
 my $TargetOpt = '';
 my $TargetReq = '';
@@ -136,6 +149,7 @@ my sub SigHandler {
   Err(1, 'Illegal argument - '.$_[1])         if $_[0] eq 'ArgErr';
 
   Err(2, 'No commit specified!')              if $_[0] eq 'CommErr';
+  Err(2, 'Nothing to debug!')                 if $_[0] eq 'DebugErr';
   Err(2, 'No filename specified!')            if $_[0] eq 'FileErr';
   Err(2, 'Missing destination!')              if $_[0] eq 'MvDErr';
   Err(2, 'No URL specified!')                 if $_[0] eq 'URLErr';
@@ -156,14 +170,13 @@ if (defined $ARGV[0]) {
   SigHandler('Usage')         if $ARGV[0] =~ /^((-)?h|--help|-\?)$/;
   SigHandler('DebugMode')     if $ARGV[0] =~ /^D$/;
 
-  # Needs secondary check, since 'D' causes shift
-  if (defined $ARGV[0]) {
-    foreach (@Requires) {
-      $TargetReq = 'True' if $ARGV[0] =~ /^$_$/;
-    }
-    foreach (@Optional) {
-      $TargetOpt = 'True' if $ARGV[0] =~ /^$_$/;
-    }
+  SigHandler('DebugErr') if $Debug and !defined $ARGV[0];
+
+  foreach (@Requires) {
+    $TargetReq = 'True' if $ARGV[0] =~ /^$_$/;
+  }
+  foreach (@Optional) {
+    $TargetOpt = 'True' if $ARGV[0] =~ /^$_$/;
   }
 }
 
@@ -193,24 +206,37 @@ while (scalar @ARGV > 0) {
 
   elsif ($ARGV[0] =~ /^c$/) {
     $Action       = 'commit';
-    my $FirstMsg  = '';
-    my $SecondMsg = '';
     shift;
 
-    my $String  = join(' ', @ARGV);
-    if ($String =~ /^(?:(.*?)(?:\s+\/\/\/\s+(.*?))?\s+)?(--\s+.*)$/) {
-      $FirstMsg  = "-m '$1'"    if $1;
-      $SecondMsg  = " -m '$2'"  if $2;
+    my $PrmMsg  = '';
+    my $SubMsg  = '';
 
-      $Options = $FirstMsg.$SecondMsg;
-      undef $FirstMsg;
-      undef $SecondMsg;
-      @ARGV = split(' ', "$3");
+    my $String  = join(' ', @ARGV);
+    if ($String =~ /^(?:(.*?)(?:\s+%%\s+(.*?))?\s+)?(--\s+.*)$/) {
+      $PrmMsg  = "-m '$1'"    if $1;
+      $SubMsg  = " -m '$2'"  if $2;
+
+      $Options = $PrmMsg.$SubMsg;
+      undef $PrmMsg;
+      undef $SubMsg;
+      @ARGV = split(' ', $3);
       next;
     }
 
     # Required in case commit message is present but no files are passed.
     SigHandler('FileErr');
+  }
+
+  elsif ($ARGV[0] =~ /^d$/) {
+    $Action       = 'diff';
+    shift;
+
+    # my $String = join(' ', @ARGV); if ($String =~ /^([0-9a-f]{7}(?:[0-9a-f]{33})?(?:\s+[0-9a-f]{7}(?:[0-9a-f]{33})?)*)?(?:\s+(--\s+.*))?$/) { $Options = $1 if $1; undef $Commits, last if !$2; @ARGV = split(' ', $2) if $2; }
+
+    while (defined $ARGV[0] and $ARGV[0] ne '--') {
+      $Options = $Options.' '.$ARGV[0];
+      shift;
+    }
   }
 
   elsif ($ARGV[0] =~ /^f$/) {
@@ -281,14 +307,17 @@ while (scalar @ARGV > 0) {
         shift;
       }
       elsif ($ARGV[1] =~ /^c$/) {
-        `git status --long --ahead-behind 2>/dev/null`
-          =~ /(Your branch is .*\.)/;
+        $Options = '--ahead-behind';
+        shift;
 
         unless ($Debug) {
+          SigHandler('ArgErr', $ARGV[1])
+            if defined $ARGV[1] and $ARGV[1] ne '--';
+
+          `git $Action $Options` =~ /(Your branch is .*\.)/;
           printf $1."\n";
           exit(0);
         }
-        shift;
       }
     }
     shift;
@@ -317,7 +346,7 @@ while (scalar @ARGV > 0) {
         $Options = '--rebase';
       }
     }
-    shift;
+    last;
   }
 
   elsif ($ARGV[0] =~ /^ps$/) {
@@ -360,8 +389,7 @@ while (scalar @ARGV > 0) {
 $Action = 'status', $Options = '-s' if !$Action;
 
 
-# Throw error if $Action requires targets but none were passed
-# or unset @Targets if $Action doesn't require targets but some were passed
+# Throw error if $Action requires targets but none / too few were passed
 if ($TargetReq) {
   if (!@Targets) {
     SigHandler('CommErr') if $Action eq 'revert';
@@ -369,10 +397,6 @@ if ($TargetReq) {
     SigHandler('FileErr');
   }
   SigHandler('MvDErr') if $Action eq 'mv' and scalar @Targets == 1;
-}
-
-if (!$TargetReq and @Targets) {
-  undef @Targets unless $TargetOpt or $Action eq 'status';
 }
 
 
@@ -383,6 +407,11 @@ foreach (@Targets) {
   $Targets = $Targets.$_.' ';
 }
 $/ = ' '; chomp($Targets);
+
+
+# Build command string and replace double whitespace
+my $Command = "git $Action $Options -- $Targets";
+$Command =~ s/\s\s/ /g;
 
 
 # Print debugging information when running in debug mode
@@ -398,10 +427,10 @@ if ($Debug) {
     printf "    $_\n";
   }
 
-  printf "\nGit command to be run:\n  git $Action $Options -- $Targets\n";
+  printf "\nGit command to be run:\n    $Command\n";
   exit(0);
 }
 
 
 # Git command execution
-system("git $Action $Options -- $Targets");
+system("$Command");
