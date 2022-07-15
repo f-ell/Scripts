@@ -1,0 +1,58 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+
+my $Author    = 'Nico Pareigis';
+my ($Program) = $0 =~ m{^.*/(\w+)$};
+my $Version   = '0.0.1';
+
+my sub Err {
+  printf STDERR "Error: %s\n", $_[1];
+  exit($_[0]) if $_[0] > 0;
+}
+
+my $URL     = 'https://archlinux.org';
+`curl -IL $URL 2>/dev/null` =~ /^HTTP(?:S)?\/\d (\d{3})/;
+# 'HTTPS/2 200' =~ /^HTTP(?:S)?\/\d (\d{3})$/;
+
+my $Status = '#', my $Reason = '/Unknown';
+
+if (!$& or $? != 0) {
+  Err(1, 'Bad response!') if !$&;
+
+  Err($?, 'Couldn\'t resolve proxy!')     if $? == 5;
+  Err($?, 'Couldn\'t resolve host!')      if $? == 6;
+  Err($?, 'Couldn\'t connect to host!')   if $? == 7;
+  Err($?, 'Timeout reached!')             if $? == 28;
+  Err($?, 'Handshake failed!')            if $? == 35;
+  Err($?, 'Invalid server certificate!')  if $? == 51;
+  Err($?, 'No response!')                 if $? == 52;
+  Err($?, 'Couldn\'t send request!')      if $? == 55;
+  Err($?, 'Couldn\'t receive request!')   if $? == 56;
+}
+else {
+  $Status = $1;
+
+  $Reason = '/Continue' if $Status =~ /^100$/;
+
+  $Reason = '/OK'       if $Status =~ /^200$/;
+  $Reason = '/Accepted' if $Status =~ /^202$/;
+
+  $Reason = '/Moved Permanently'  if $Status =~ /^301$/;
+  $Reason = '/Temporary Redirect' if $Status =~ /^307$/;
+  $Reason = '/Permanent Redirect' if $Status =~ /^308$/;
+
+  $Reason = '/Bad Request'      if $Status =~ /^400$/;
+  $Reason = '/Unauthorized'     if $Status =~ /^401$/;
+  $Reason = '/Forbidden'        if $Status =~ /^403$/;
+  $Reason = '/Not Found'        if $Status =~ /^404$/;
+  $Reason = '/Request Timeout'  if $Status =~ /^408$/;
+
+  $Reason = '/Internal Server Error'  if $Status =~ /^500$/;
+  $Reason = '/Bad Gateway'            if $Status =~ /^502$/;
+  $Reason = '/Service Unavailable'    if $Status =~ /^503$/;
+  $Reason = '/Gateway Timeout'        if $Status =~ /^504$/;
+}
+
+my ($sURL)  = $URL =~ /\/\/(.*)$/;
+printf $sURL.' - '.$Status.$Reason."\n";
