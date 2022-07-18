@@ -78,6 +78,9 @@ OPTIONS
       file, or on the command line (see -e and -p respectively), to only show
       specific git-related results.
 
+    -l
+      Include symlinked files in search results (traverses symlinks).
+
     -p, --pattern PATTERN
       Use PATTERN to exclude files / directories from being matched. Can be used
       more than once.
@@ -186,6 +189,7 @@ ExcludePattern=''
 Exp='. / '
 ExpList=''
 GitIgnore='**/.git*,'
+Link=''
 
 while [ -n "$1" ]; do
   case "$1" in
@@ -220,6 +224,10 @@ while [ -n "$1" ]; do
 
     -g|--no-git-ignore)
       unset GitIgnore
+      shift;;
+
+    -l)
+      Link='L'
       shift;;
 
     -p|--pattern)
@@ -262,7 +270,7 @@ fi
 Files=''
 [ -z "$ExpList" ] && ExpList="$Exp"
 while [ -n "$ExpList" ]; do
-  Match="$(fd $ExcludeList -tf -tl -H -d$Depth -- "${ExpList%% / *}" "$Dir" \
+  Match="$(fd $ExcludeList -tf -H$Link -d$Depth -- "${ExpList%% / *}" "$Dir" \
     | fzf -e -0 -1)"
 
   Exit=$?
