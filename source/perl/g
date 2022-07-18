@@ -211,10 +211,11 @@ while (scalar @ARGV > 0) {
     my $PrmMsg  = '';
     my $SubMsg  = '';
 
+    $_ =~ s/"/\\"/g foreach @ARGV;
     my $String  = join(' ', @ARGV);
     if ($String =~ /^(?:(.*?)(?:\s+%%\s+(.*?))?\s+)?(--\s+.*)$/) {
-      $PrmMsg  = "-m '$1'"    if $1;
-      $SubMsg  = " -m '$2'"  if $2;
+      $PrmMsg  = '-m '."\"$1\""   if $1;
+      $SubMsg  = ' -m '."\"$2\""  if $2;
 
       $Options = $PrmMsg.$SubMsg;
       undef $PrmMsg;
