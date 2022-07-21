@@ -7,19 +7,25 @@ use strict;
 #   Concatenating to string may be less efficient than in-place replacement of
 #   whitespace (i.e. C-style for).
 #
-# Issue: git-diff throws error with '--$'
-#   Should be solved with new processing loop
+# Issue:
+#   Perhaps update error handling
+#   E.g.: git-diff throws long error message with '-' as last argument
+#   Lots of work, would need testing for heaps of edge cases for all commands
 #
 # TODO:
-# add git-branch as 'b'
-# add git-checkout as 'ch'
-# add git-stash as 'st'
-# add git-switch as 'sw'
-# add git-merge as 'm'
+# High Prio.:
+#   add git-switch as 'sw'
+#   add git-merge as 'm'
+#
+# Low Prio.:
+#   add git-branch as 'b'
+#     can probably be (almost) fully replaced by git-switch
+#   add git-checkout as 'ch'
+#   add git-stash as 'st'
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(\w+)$};
-my $Version   = '0.1.2';
+my $Version   = '0.1.3';
 
 sub Usage {
 printf <<EOF
@@ -35,8 +41,8 @@ DESCRIPTION
     Running $Program without any options runs 'git status -s' on the repository.
 
     $Program currently provides shorthands for the following commands:
-    add, clone, commit, diff, fetch, log, move, pull, push, remove, restore,
-    revert, status
+    add, clone, commit, diff, fetch, log, mv, pull, push, rm, restore, revert,
+    status
 
 OPTIONS
     D
@@ -49,9 +55,9 @@ OPTIONS
     a -- FILE...
       Run 'git add' on FILE... .
 
-    c ['commit msg' [%% 'secondary commit msg']] -- FILE...
+    c ['commit msg' [%%%% 'secondary commit msg']] -- FILE...
       Run 'git commit' on FILE... .
-      Optionally takes one or two commit messages, where '%%' acts as a sepa-
+      Optionally takes one or two commit messages, where '%%%%' acts as a sepa-
       rator between the two. The second commit message is passed as a second
       '-m ...' to git.
 
@@ -59,8 +65,8 @@ OPTIONS
       Run 'git diff' on the repository, COMMIT..., or FILE... .
 
       SYNOPSIS
-        '$Program d COMMIT...'  runs on COMMIT.
-        '$Program d -- FILE...' runs on FILE.
+        '$Program d COMMIT...'  runs on COMMIT... .
+        '$Program d -- FILE...' runs on FILE... .
         '$Program d COMMIT... -- FILE...' runs on the commit(s) with hash
         COMMIT... on FILE..., if such a commit exists for FILE... .
 
@@ -89,6 +95,14 @@ OPTIONS
 
     cl -- URL
       Clone the repository located at URL.
+      Omitting the URL schema assumes https. A URL starting with a leading slash
+      is assumed to refer to a github repository - access is done via https.
+
+      SYNOPSIS
+        '$Program cl -- https://github.com/user/repo',
+        '$Program cl -- github.com/user/repo'
+        and '$Program cl -- /user/repo',
+        will all clone the same repository at 'https://github.com/user/repo'
 
     mv -- SOURCE... DEST
       Rename SOURCE... to DEST | DEST/SOURCE... and add the renamed files to the
@@ -403,6 +417,16 @@ if ($TargetReq) {
 
 # Target processing
 my $Targets = '';
+
+if ($Action eq 'clone') {
+  my $Schema  = '';
+  my $Host    = '';
+  $Schema = 'https://'    if $Targets[0] !~ m{^http(s)?://};
+  $Host   = 'github.com'  if $Targets[0] =~ m{^/.*$};
+
+  $Targets[0] = $Schema.$Host.$Targets[0];
+}
+
 foreach (@Targets) {
   $_ =~ s/ /\\ /;
   $Targets = $Targets.$_.' ';
