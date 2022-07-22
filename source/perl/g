@@ -60,6 +60,7 @@ OPTIONS
       Optionally takes one or two commit messages, where '%%%%' acts as a sepa-
       rator between the two. The second commit message is passed as a second
       '-m ...' to git.
+      NOTE: double dashes in commit mesages must not be used!
 
     d [COMMIT...] [-- FILE...]
       Run 'git diff' on the repository, COMMIT..., or FILE... .
