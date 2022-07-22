@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# TODO
+# Consider adding support for FZY and FZ (or whatever the name was)
+
 Authors='Nico Pareigis'
 Program=${0##*/}
 Version=0.2.9
