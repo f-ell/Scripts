@@ -1,0 +1,6 @@
+#!/bin/sh
+
+Cpu=`sensors | grep -A3 "Core 0" | sort -k3`
+Cpu=${Cpu%.* \(high*}; Cpu=${Cpu##*+}
+
+printf "CPU: $Cpu°C\n"
