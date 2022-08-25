@@ -1,0 +1,43 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+
+my $Author    = 'Nico Pareigis';
+my ($Program) = $0 =~ m{^.*/(\w+)$};
+my $Version   = '0.1.0';
+
+my sub Err {
+  printf STDERR "Error: %s\n", $_[1];
+  exit($_[0]) if $_[0] > 0;
+}
+
+my $Url = defined $ARGV[0] ? $ARGV[0] : 'https://archlinux.org';
+my $Curl = `curl -sIL $Url 2>/dev/null`; $Curl =~ s/\r//g;
+
+if ($? != 0) {
+  my $ErrMsg = 'Fatal curl error.';
+  $ErrMsg = 'Can\'t resolve host.'  if $? == 6;
+  $ErrMsg = 'Host unreachable.'     if $? == 7;
+  Err($?, $ErrMsg);
+}
+
+open(FH, '<', \$Curl) or die("$!");
+  local $/ = ''; my $StatusCode;
+  while (<FH>) {
+    ($StatusCode) = /^HTTP(?:S)?\/\d(?:\.\d)? (\d{3}.*)\n/;
+  }
+close(FH) or die("$!");
+
+Err(1, 'Invalid headers.') unless $StatusCode;
+
+local $/ = ' '; chomp $StatusCode;
+
+local $_ = $StatusCode;
+$StatusCode .= '/OK' if length == 3 and $_ eq '200';
+
+local $_ = $StatusCode;
+length == 3
+  ? $StatusCode .= '/Unkown'
+  : substr($StatusCode, 3, 1, '/'); # redundant when 200
+
+printf "$Url - $StatusCode\n";
