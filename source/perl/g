@@ -3,24 +3,28 @@ use warnings;
 use strict;
 
 # NOTE:
-# Command execution:
+# Shell command execution:
 #   Concatenating to string may be less efficient than in-place replacement of
 #   whitespace (i.e. C-style for).
 #
 # Issue:
-#   Perhaps update error handling
+#   Consider updating error handling for shell execution errors
 #   E.g.: git-diff throws long error message with '-' as last argument
-#   Lots of work, would need testing for heaps of edge cases for all commands
+#   Drawback: Tons of work, needs testing for heaps of edge cases for every command
 #
 # TODO:
 # High Prio.:
+#   add git-init as 'i(n)' (option for branch, bare, directory ($TargetOpt))
 #   add git-switch as 'sw'
 #   add git-merge as 'm'
 #
+#   add git-branch ('b')    -- list, create, delete
+#   add git-switch ('sw')   -- switch branch
+#   add git-checkout ('ch') -- switch commit
+#
+#   add git-commit --amend if possible
+#
 # Low Prio.:
-#   add git-branch as 'b'
-#     can probably be (almost) fully replaced by git-switch
-#   add git-checkout as 'ch'
 #   add git-stash as 'st'
 
 my $Author    = 'Nico Pareigis';
