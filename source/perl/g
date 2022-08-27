@@ -3,10 +3,6 @@ use warnings;
 use strict;
 
 # NOTE:
-# Shell command execution:
-#   Concatenating to string may be less efficient than in-place replacement of
-#   whitespace (i.e. C-style for).
-#
 # Issue:
 #   Consider updating error handling for shell execution errors
 #   E.g.: git-diff throws long error message with '-' as last argument
@@ -14,24 +10,136 @@ use strict;
 #
 # TODO:
 # High Prio.:
+#   fix git-commit --amend targetreq limitation
+#
 #   add git-init as 'i(n)' (option for branch, bare, directory ($TargetOpt))
-#   add git-switch as 'sw'
+#     needs exception like clone to be run outside repo
 #   add git-merge as 'm'
 #
 #   add git-branch ('b')    -- list, create, delete
 #   add git-switch ('sw')   -- switch branch
 #   add git-checkout ('ch') -- switch commit
 #
-#   add git-commit --amend if possible
-#
 # Low Prio.:
 #   add git-stash as 'st'
 
 my $Author    = 'Nico Pareigis';
-my ($Program) = $0 =~ m{^.*/(\w+)$};
+my ($Program) = $0 =~ m{^.*/(.+)$};
 my $Version   = '0.1.3';
 
-sub Usage {
+sub D {
+  return "    D
+      Run $Program in debug mode. Print relevant information to STDOUT, but
+      don't run the actual git command.\n";
+}
+sub h {
+  return "    [-]h [OPT]
+      Print help information and exit.
+      When passed a valid option name as the first parameter, only print infor-
+      mation concerning that option. Subsequent parameters are discarded.\n";
+}
+sub a {
+  return "    a -- FILE...
+      Run 'git add' on FILE... .\n";
+}
+sub c {
+  return "    c [a] ['commit msg' [%%%% 'secondary commit msg']] -- FILE...
+      Run 'git commit' on FILE... .
+      'a' (as in 'amend') amends the latest commit's commit message.
+      Optionally takes one or two commit messages, where '%%%%' acts as a sepa-
+      rator between the two. The second commit message is passed as a second
+      '-m ...' to git.
+      NOTE: double dashes in commit mesages must not be used!\n";
+}
+sub d {
+  return "    d [COMMIT...] [-- FILE...]
+      Run 'git diff' on the repository, COMMIT..., or FILE... .
+
+      SYNOPSIS
+        '$Program d COMMIT...'  runs on COMMIT... .
+        '$Program d -- FILE...' runs on FILE... .
+        '$Program d COMMIT... -- FILE...' runs on the commit(s) with hash
+        COMMIT... on FILE..., if such a commit exists for FILE... .\n";
+}
+sub f {
+  return "    f
+      Run 'git fetch' on the current repository.\n";
+}
+sub l {
+  return "    l [sl] [n] [INT] [-- FILE...]
+      Run 'git log --abbrev-commit --no-decorate' on the current repository, or
+      on FILE..., if any are specified. As normal, subsequent files are ignored.
+      's' (as in 'short' (i.e. --pretty=oneline), default) and 'l' (as in 'long'
+      (i.e. --pretty=medium) dictate the listing format. 'n' (--name-only) dic-
+      tates whether or not the filenames belonging to commits should be shown.
+      Optionally takes an integer to specify the number of commits to show (de-
+      fault is 4).\n";
+}
+sub r {
+  return "    r [en] -- COMMIT...
+      Run 'git revert' on COMMIT... .
+      'e' (-e, default) and 'n' (--no-edit) dictate whether or not the commit me-
+      ssage may be changed before the commit is reverted.\n";
+}
+sub _s {
+  return "    s [slc] [-- FILE...]
+      Run 'git status' on the current repository, or on FILE..., if any are spe-
+      cified.
+      's' (-s, default) and 'l' (--long) dictate the listing format. 'c' (as in
+      'compare') shows the branch's status compared to upstream.\n";
+}
+sub cl {
+  return "    cl -- URL
+      Clone the repository located at URL.
+      Omitting the URL schema assumes https. A URL starting with a leading slash
+      is assumed to refer to a github repository - access is done via https.
+
+      SYNOPSIS
+        '$Program cl -- https://github.com/user/repo',
+        '$Program cl -- github.com/user/repo'
+        and '$Program cl -- /user/repo',
+        will all clone the same repository at 'https://github.com/user/repo'\n";
+}
+sub mv {
+  return "    mv -- SOURCE... DEST
+      Rename SOURCE... to DEST | DEST/SOURCE... and add the renamed files to the
+      index.\n";
+}
+sub pl {
+  return "    pl [nr]
+      Run 'git pull' on the current repository.
+      'n' (--no-rebase, default) and 'r' (--rebase) dictate whether or not git
+      should rebase already commited changes.\n";
+}
+sub ps {
+  return "    ps
+      Run 'git push' on the current repository.\n";
+}
+sub re {
+  return "    re -- FILE...
+      Run 'git restore --staged' on staged FILE... .\n";
+}
+sub rm {
+  return "    rm [cn] [r] -- FILE...
+      Run 'git rm' on FILE... .
+      'c' (--cached, default) and 'n' (as in 'not cached') dictate whether or
+      not git should remove files only from the index, or if they should be com-
+      pletely removed from the disk. 'r' (-r) allows recursive removal of entire
+      directory structures (USE WITH CAUTION!).\n";
+}
+
+my %Dispatch = (
+  D => D(), h => h(),
+  a => a(), c => c(),
+  d => d(), f => f(),
+  l => l(), r => r(),
+  s => _s(),
+  cl => cl(), mv => mv(),
+  pl => pl(), ps => ps(),
+  re => re(), rm => rm()
+);
+
+sub Help {
 printf <<EOF
 NAME
     $Program - shorthands for git commands
@@ -49,94 +157,28 @@ DESCRIPTION
     status
 
 OPTIONS
-    D
-      Run $Program in debug mode. Print relevant information to STDOUT, but
-      don't run the actual git command.
-
-    [-]h
-      Print this help information and exit.
-
-    a -- FILE...
-      Run 'git add' on FILE... .
-
-    c ['commit msg' [%%%% 'secondary commit msg']] -- FILE...
-      Run 'git commit' on FILE... .
-      Optionally takes one or two commit messages, where '%%%%' acts as a sepa-
-      rator between the two. The second commit message is passed as a second
-      '-m ...' to git.
-      NOTE: double dashes in commit mesages must not be used!
-
-    d [COMMIT...] [-- FILE...]
-      Run 'git diff' on the repository, COMMIT..., or FILE... .
-
-      SYNOPSIS
-        '$Program d COMMIT...'  runs on COMMIT... .
-        '$Program d -- FILE...' runs on FILE... .
-        '$Program d COMMIT... -- FILE...' runs on the commit(s) with hash
-        COMMIT... on FILE..., if such a commit exists for FILE... .
-
-    f
-      Run 'git fetch' on the current repository.
-
-    l [sl] [n] [INT] [-- FILE...]
-      Run 'git log --abbrev-commit --no-decorate' on the current repository, or
-      on FILE..., if any are specified. As normal, subsequent files are ignored.
-      's' (as in 'short' (i.e. --pretty=oneline), default) and 'l' (as in 'long'
-      (i.e. --pretty=medium) dictate the listing format. 'n' (--name-only) dic-
-      tates whether or not the filenames belonging to commits should be shown.
-      Optionally takes an integer to specify the number of commits to show (de-
-      fault is 4).
-
-    r [en] -- COMMIT...
-      Run 'git revert' on COMMIT... .
-      'e' (-e, default) and 'n' (--no-edit) dictate whether or not the commit me-
-      ssage may be changed before the commit is reverted.
-
-    s [slc] [-- FILE...]
-      Run 'git status' on the current repository, or on FILE..., if any are spe-
-      cified.
-      's' (-s, default) and 'l' (--long) dictate the listing format. 'c' (as in
-      'compare') shows the branch's status compared to upstream.
-
-    cl -- URL
-      Clone the repository located at URL.
-      Omitting the URL schema assumes https. A URL starting with a leading slash
-      is assumed to refer to a github repository - access is done via https.
-
-      SYNOPSIS
-        '$Program cl -- https://github.com/user/repo',
-        '$Program cl -- github.com/user/repo'
-        and '$Program cl -- /user/repo',
-        will all clone the same repository at 'https://github.com/user/repo'
-
-    mv -- SOURCE... DEST
-      Rename SOURCE... to DEST | DEST/SOURCE... and add the renamed files to the
-      index.
-
-    pl [nr]
-      Run 'git pull' on the current repository.
-      'n' (--no-rebase, default) and 'r' (--rebase) dictate whether or not git
-      should rebase already commited changes.
-
-    ps
-      Run 'git push' on the current repository.
-
-    re -- FILE...
-      Run 'git restore --staged' on staged FILE... .
-
-    rm [cn] [r] -- FILE...
-      Run 'git rm' on FILE... .
-      'c' (--cached, default) and 'n' (as in 'not cached') dictate whether or
-      not git should remove files only from the index, or if they should be com-
-      pletely removed from the disk. 'r' (-r) allows recursive removal of entire
-      directory structures (USE WITH CAUTION!).
-
+$Dispatch{D}
+$Dispatch{h}
+$Dispatch{a}
+$Dispatch{c}
+$Dispatch{d}
+$Dispatch{f}
+$Dispatch{l}
+$Dispatch{r}
+$Dispatch{s}
+$Dispatch{cl}
+$Dispatch{mv}
+$Dispatch{pl}
+$Dispatch{ps}
+$Dispatch{re}
+$Dispatch{rm}
 EXIT STATUS
     0, on success
     1, on argument error
     2, when missing filename or similar
     3, when trying to run outside of a git repository
     4, on dependency error
+  130, on specific user action
 
 DEPENDENCIES
     git
@@ -147,8 +189,7 @@ VERSION
 AUTHOR(S)
     $Author
 EOF
-;
-exit(0);
+; exit(0);
 }
 
 my sub Err {
@@ -156,15 +197,14 @@ my sub Err {
   exit($_[0]) if $_[0] > 0;
 }
 
-my $Debug = '';
+my $Debug     = '';
 my @Optional  = ( 'l', 's', 'd');
 my @Requires  = ( 'a', 'c', 'r', 'cl', 'mv', 're', 'rm',);
 my $TargetOpt = '';
 my $TargetReq = '';
 
 my sub SigHandler {
-  Usage()                                     if $_[0] eq 'Usage';
-
+  Err(1, 'No help available - '.$_[1])        if $_[0] eq 'HelpErr';
   Err(1, 'Illegal argument - '.$_[1])         if $_[0] eq 'ArgErr';
 
   Err(2, 'No commit specified!')              if $_[0] eq 'CommErr';
@@ -176,42 +216,50 @@ my sub SigHandler {
   Err(3, 'Not running in a git repository!')  if $_[0] eq 'RepoErr';
   Err(4, 'Dependency not met - '.$_[1])       if $_[0] eq 'DepErr';
 
-  $Debug = 'True', shift @ARGV if $_[0] eq 'DebugMode';
+  Err(130, 'Execution interrupted by user action.') if $_[0] eq 'UserAction';
+
+  do {$Debug = 'True'; shift @ARGV} if $_[0] eq 'DebugMode';
 }
 
 
 # Dependency check
-system('command -v git 1>/dev/null 2>&1') == 0
-  or SigHandler('DepErr', 'git');
+# ----------------
+`git -v 2>/dev/null` or SigHandler('DepErr', 'git');
+
 
 # Help-, debug-mode-, target-required-checks
-if (defined $ARGV[0]) {
-  SigHandler('Usage')         if $ARGV[0] =~ /^((-)?h|--help|-\?)$/;
+# ------------------------------------------
+if ($ARGV[0]) {
+  if ($ARGV[0] =~ /^(?:(-)?h|--help|-\?)$/) {
+    # doesn't work due to key randomization
+    # find a way to implement as list / sortable keys?
+    # if (not $ARGV[1]) { printf "$Dispatch{$_}\n" foreach keys %Dispatch; exit(0); }
+    do {Help(); exit(0)} if not $ARGV[1];
+
+    SigHandler('HelpErr', $ARGV[1]) if not $Dispatch{$ARGV[1]};
+    printf "$Dispatch{$ARGV[1]}\n"; exit(0);
+  }
+
   SigHandler('DebugMode')     if $ARGV[0] =~ /^D$/;
+  SigHandler('DebugErr')      if $Debug and not $ARGV[0];
 
-  SigHandler('DebugErr') if $Debug and !defined $ARGV[0];
-
-  foreach (@Requires) {
-    $TargetReq = 'True' if $ARGV[0] =~ /^$_$/;
-  }
-  foreach (@Optional) {
-    $TargetOpt = 'True' if $ARGV[0] =~ /^$_$/;
-  }
+  foreach (@Requires) {do {$TargetReq = 'True'; last} if $ARGV[0] =~ /^$_$/};
+  foreach (@Optional) {do {$TargetOpt = 'True'; last} if $ARGV[0] =~ /^$_$/};
 }
 
+
 # Repository check
-unless ($Debug or (defined $ARGV[0] and $ARGV[0] =~ /^cl$/)) {
-  system('git branch --show-current 1>/dev/null 2>&1') == 0
-    or SigHandler('RepoErr');
+# ----------------
+unless ($Debug or ($ARGV[0] and $ARGV[0] =~ /^cl$/)) {
+  `git branch --show-current 2>/dev/null` or SigHandler('RepoErr');
 }
 
 
 # Argument processing
-my $Action  = '';
-my $Options = '';
-my @Targets = ();
+# -------------------
+my $Action = ''; my $Options = ''; my @Targets = ();
 
-while (scalar @ARGV > 0) {
+while (scalar @ARGV) {
   if ($ARGV[0] =~ /^--$/) {
     shift;
     @Targets = @ARGV;
@@ -219,49 +267,49 @@ while (scalar @ARGV > 0) {
   }
 
   elsif ($ARGV[0] =~ /^a$/) {
-    $Action = 'add';
-    shift;
+    $Action = 'add'; shift;
   }
 
   elsif ($ARGV[0] =~ /^c$/) {
-    $Action       = 'commit';
+    $Action = 'commit';
+
+    if ($ARGV[1] and $ARGV[1] =~ /^a$/) {
+      $Options = '--amend';
+      shift;
+    }
+
     shift;
 
     my $PrmMsg  = '';
     my $SubMsg  = '';
 
     $_ =~ s/"/\\"/g foreach @ARGV;
-    my $String  = join(' ', @ARGV);
-    if ($String =~ /^(?:(.*?)(?:\s+%%\s+(.*?))?\s+)?(--\s+.*)$/) {
-      $PrmMsg  = '-m '."\"$1\""   if $1;
-      $SubMsg  = ' -m '."\"$2\""  if $2;
+    my $ArgStr  = join(' ', @ARGV);
+    if ($ArgStr =~ /^(?:(.*?)(?:\s+%%\s+(.*?))?\s+)?(--\s+.*)$/) {
+      $PrmMsg  = ' -m '."\"$1\"" if $1;
+      $SubMsg  = ' -m '."\"$2\"" if $2;
+      $Options .= $PrmMsg.$SubMsg;
 
-      $Options = $PrmMsg.$SubMsg;
       undef $PrmMsg;
       undef $SubMsg;
       @ARGV = split(' ', $3);
+      # last if $Options =~ /^--amend/; # breaks @TargetReq
       next;
     }
 
-    # Required in case commit message is present but no files are passed.
+    # In case message is present but no files are passed:
     SigHandler('FileErr');
   }
 
   elsif ($ARGV[0] =~ /^d$/) {
-    $Action       = 'diff';
+    $Action = 'diff';
+
+    do {$Options .= ' '.$ARGV[1]; shift} while $ARGV[1] and $ARGV[1] ne '--';
     shift;
-
-    # my $String = join(' ', @ARGV); if ($String =~ /^([0-9a-f]{7}(?:[0-9a-f]{33})?(?:\s+[0-9a-f]{7}(?:[0-9a-f]{33})?)*)?(?:\s+(--\s+.*))?$/) { $Options = $1 if $1; undef $Commits, last if !$2; @ARGV = split(' ', $2) if $2; }
-
-    while (defined $ARGV[0] and $ARGV[0] ne '--') {
-      $Options = $Options.' '.$ARGV[0];
-      shift;
-    }
   }
 
   elsif ($ARGV[0] =~ /^f$/) {
-    $Action = 'fetch';
-    last;
+    $Action = 'fetch'; last;
   }
 
   elsif ($ARGV[0] =~ /^l$/) {
@@ -271,27 +319,20 @@ while (scalar @ARGV > 0) {
     my $Count     = ' -4';
     my $Name      = '';
 
-    if (defined $ARGV[1]) {
-      if ($ARGV[1] =~ /^s$/) {
-        shift;
-      }
-      elsif ($ARGV[1] =~ /^l$/) {
-        $Display = 'medium';
-        shift;
-      }
-
-      if (defined $ARGV[1] and $ARGV[1] =~ /^n$/) {
-        $Name = ' --name-only';
-        shift;
-      }
-
-      if (defined $ARGV[1] and $ARGV[1] =~ /^[1-9][0-9]*$/) {
-        $Count = ' -'.$ARGV[1];
-        shift;
-      }
+    if (local $_ = $ARGV[1]) {
+                                shift   if /^s$/;
+      do {$Display = 'medium';  shift}  if /^l$/;
     }
 
-    $Options = $Options.$Display.$Count.$Name;
+    if (local $_ = $ARGV[1]) {
+      do {$Name = ' --name-only'; shift} if /^n$/;
+    }
+
+    if (local $_ = $ARGV[1]) {
+      do {$Count = ' -'.$_; shift} if /^[1-9][0-9]*$/;
+    }
+
+    $Options .= $Display.$Count.$Name;
     undef $Display;
     undef $Count;
     undef $Name;
@@ -302,15 +343,15 @@ while (scalar @ARGV > 0) {
     $Action   = 'revert';
     $Options  = '-e';
 
-    if (defined $ARGV[1]) {
-      if ($ARGV[1] =~ /^e$/) {
-        shift;
-      }
-      elsif ($ARGV[1] =~ /^n$/) {
-        $Options = '--no-edit';
-        shift;
-      }
+    do {shift; next} if not $ARGV[1] or $ARGV[1] eq '--';
+
+    if ($ARGV[1] =~ /^e$/) {
+      shift;
     }
+    elsif ($ARGV[1] =~ /^n$/) {
+      $Options = '--no-edit'; shift;
+    }
+
     shift;
   }
 
@@ -318,60 +359,59 @@ while (scalar @ARGV > 0) {
     $Action   = 'status';
     $Options  = '-s';
 
-    if (defined $ARGV[1]) {
-      if ($ARGV[1] =~ /^s$/) {
-        shift;
-      }
-      elsif ($ARGV[1] =~ /^l$/) {
-        $Options = '--long';
-        shift;
-      }
-      elsif ($ARGV[1] =~ /^c$/) {
-        $Options = '--ahead-behind';
-        shift;
+    do {shift; next} if not $ARGV[1] or $ARGV[1] eq '--';
 
-        unless ($Debug) {
-          SigHandler('ArgErr', $ARGV[1])
-            if defined $ARGV[1] and $ARGV[1] ne '--';
-
-          `git $Action $Options` =~ /(Your branch is .*\.)/;
-          printf $1."\n";
-          exit(0);
-        }
-      }
+    if ($ARGV[1] =~ /^s$/) {
+      shift;
     }
+    elsif ($ARGV[1] =~ /^l$/) {
+      $Options = '--long'; shift;
+    }
+    elsif ($ARGV[1] =~ /^c$/) {
+      $Options = '--ahead-behind';
+
+      unless ($Debug) {
+        SigHandler('ArgErr', $ARGV[2]) if $ARGV[2] and $ARGV[2] ne '--';
+
+        `git $Action $Options` =~ /(Your branch is .*\.)/;
+        printf $1."\n"; exit(0);
+      }
+
+      shift;
+    }
+
     shift;
   }
 
   elsif ($ARGV[0] =~ /^cl$/) {
-    $Action = 'clone';
-    shift;
+    $Action = 'clone'; shift;
   }
 
   elsif ($ARGV[0] =~ /^mv$/) {
-    $Action = 'mv';
-    shift;
+    $Action = 'mv'; shift;
   }
 
   elsif ($ARGV[0] =~ /^pl$/) {
     $Action   = 'pull';
     $Options  = '--no-rebase';
 
-    if (defined $ARGV[1]) {
-      if ($ARGV[1] =~ /^n$/) {
-        shift;
-      }
-      elsif ($ARGV[1] =~ /^r$/) {
-        shift;
-        $Options = '--rebase';
-      }
+    do {shift; last} if not $ARGV[1];
+
+    if ($ARGV[1] =~ /^n$/) {
+      shift;
     }
+    elsif ($ARGV[1] =~ /^r$/) {
+      $Options = '--rebase'; shift;
+    }
+
+    # In case anything but '--' is passed:
+    SigHandler('ArgErr', $ARGV[1]) if $ARGV[1] and $ARGV[1] ne '--';
+
     last;
   }
 
   elsif ($ARGV[0] =~ /^ps$/) {
-    $Action = 'push';
-    last;
+    $Action = 'push'; last;
   }
 
   elsif ($ARGV[0] =~ /^re$/) {
@@ -384,34 +424,48 @@ while (scalar @ARGV > 0) {
     $Action   = 'rm';
     $Options  = '--cached';
 
-    if (defined $ARGV[1]) {
-      if ($ARGV[1] =~ /^c$/) {
-        shift;
-      }
-      elsif ($ARGV[1] =~ /^n$/) {
-        $Options = '';
-        shift;
-      }
+    do {shift; next} if not $ARGV[1] or $ARGV[1] eq '--';
 
-      if (defined $ARGV[1] and $ARGV[1] =~ /^r$/) {
-        $Options = $Options.' -r';
-        shift;
-      }
+    if ($ARGV[1] =~ /^c$/) {
+      shift;
     }
+    elsif ($ARGV[1] =~ /^n$/) {
+      $Options = ''; shift;
+    }
+
+    if ($ARGV[1] and $ARGV[1] =~ /^r$/) {
+      $Options .= ' -r'; shift;
+    }
+
+    local $_ = $Options;
+    if (/-r/ and not /--cached/) {
+      printf STDERR "WARNING\n";
+
+      my $Confirm = '';
+      until ($Confirm =~ /^(?:y|n)$/i or $Confirm eq "\n") {
+        printf 'Confirm non-cached, recursive removal (y/N): ';
+        $Confirm = <STDIN>;
+      }
+      $Confirm = 'n' if lc $Confirm ne "y\n";
+
+      SigHandler('UserAction') if lc $Confirm eq 'n';
+    }
+
     shift;
   }
 
-  SigHandler('ArgErr', $ARGV[0]) if defined $ARGV[0] and $ARGV[0] ne '--';
+} continue {
+  SigHandler('ArgErr', $ARGV[0]) if $ARGV[0] and $ARGV[0] ne '--';
 }
 
 
 # Set default $Action if no arguments were passed
-$Action = 'status', $Options = '-s' if !$Action;
+do {$Action = 'status'; $Options = '-s'} if not $Action;
 
 
 # Throw error if $Action requires targets but none / too few were passed
 if ($TargetReq) {
-  if (!@Targets) {
+  if (not @Targets) {
     SigHandler('CommErr') if $Action eq 'revert';
     SigHandler('URLErr')  if $Action eq 'clone';
     SigHandler('FileErr');
@@ -433,24 +487,25 @@ if ($Action eq 'clone') {
 }
 
 foreach (@Targets) {
-  $_ =~ s/ /\\ /;
-  $Targets = $Targets.$_.' ';
+  s/ /\\ /;
+  $Targets .= $_.' ';
 }
 $/ = ' '; chomp($Targets);
 
 
+
 # Build command string and replace double whitespace
 my $Command = "git $Action $Options -- $Targets";
-$Command =~ s/\s\s/ /g;
+$Command =~ s/\s+/ /g;
 
 
 # Print debugging information when running in debug mode
 if ($Debug) {
-  $TargetReq = 'False' if !$TargetReq;
-  $TargetOpt = 'False' if !$TargetOpt;
+  $TargetReq = 'False' if not $TargetReq;
+  $TargetOpt = 'False' if not $TargetOpt;
 
   printf "Debug mode output:\n\n";
-  printf "Action:  $Action\nOptions: $Options\n\n";
+  printf "Action:   $Action\nOptions: $Options\n\n";
   printf "TargetRequired: $TargetReq\nTargetOptional: $TargetOpt\nTarget(s):\n";
 
   foreach (@Targets) {
