@@ -75,12 +75,6 @@ sub l {
       Optionally takes an integer to specify the number of commits to show (de-
       fault is 4).\n";
 }
-sub r {
-  return "    r [en] -- COMMIT...
-      Run 'git revert' on COMMIT... .
-      'e' (-e, default) and 'n' (--no-edit) dictate whether or not the commit me-
-      ssage may be changed before the commit is reverted.\n";
-}
 sub _s {
   return "    s [slc] [-- FILE...]
       Run 'git status' on the current repository, or on FILE..., if any are spe-
@@ -115,10 +109,6 @@ sub ps {
   return "    ps
       Run 'git push' on the current repository.\n";
 }
-sub re {
-  return "    re -- FILE...
-      Run 'git restore --staged' on staged FILE... .\n";
-}
 sub rm {
   return "    rm [cn] [r] -- FILE...
       Run 'git rm' on FILE... .
@@ -127,16 +117,28 @@ sub rm {
       pletely removed from the disk. 'r' (-r) allows recursive removal of entire
       directory structures (USE WITH CAUTION!).\n";
 }
+sub res {
+  return "    res -- FILE...
+      Run 'git restore --staged' on staged FILE... .\n";
+}
+sub rev {
+  return "    rev [en] -- COMMIT...
+      Run 'git revert' on COMMIT... .
+      'e' (-e, default) and 'n' (--no-edit) dictate whether or not the commit me-
+      ssage may be changed before the commit is reverted.\n";
+}
 
 my %Dispatch = (
   D => D(), h => h(),
   a => a(), c => c(),
   d => d(), f => f(),
-  l => l(), r => r(),
-  s => _s(),
+  l => l(), s => _s(),
+
   cl => cl(), mv => mv(),
   pl => pl(), ps => ps(),
-  re => re(), rm => rm()
+  rm  => rm(),
+
+  res => res(), rev => rev()
 );
 
 sub Help {
@@ -164,14 +166,14 @@ $Dispatch{c}
 $Dispatch{d}
 $Dispatch{f}
 $Dispatch{l}
-$Dispatch{r}
 $Dispatch{s}
 $Dispatch{cl}
 $Dispatch{mv}
 $Dispatch{pl}
 $Dispatch{ps}
-$Dispatch{re}
 $Dispatch{rm}
+$Dispatch{res}
+$Dispatch{rev}
 EXIT STATUS
     0, on success
     1, on argument error
@@ -199,9 +201,8 @@ my sub Err {
 
 my $Debug     = '';
 my @Optional  = ( 'l', 's', 'd');
-my @Requires  = ( 'a', 'c', 'r', 'cl', 'mv', 're', 'rm',);
-my $TargetOpt = '';
-my $TargetReq = '';
+my @Requires  = ( 'a', 'c', 'cl', 'mv', 'rm', 'res', 'rev');
+my $TargetOpt = ''; my $TargetReq = '';
 
 my sub SigHandler {
   Err(1, 'No help available - '.$_[1])        if $_[0] eq 'HelpErr';
@@ -283,7 +284,7 @@ while (scalar @ARGV) {
     my $PrmMsg  = '';
     my $SubMsg  = '';
 
-    $_ =~ s/"/\\"/g foreach @ARGV;
+    s/"/\\"/g foreach @ARGV;
     my $ArgStr  = join(' ', @ARGV);
     if ($ArgStr =~ /^(?:(.*?)(?:\s+%%\s+(.*?))?\s+)?(--\s+.*)$/) {
       $PrmMsg  = ' -m '."\"$1\"" if $1;
@@ -293,6 +294,7 @@ while (scalar @ARGV) {
       undef $PrmMsg;
       undef $SubMsg;
       @ARGV = split(' ', $3);
+      # probably not even required
       # last if $Options =~ /^--amend/; # breaks @TargetReq
       next;
     }
@@ -336,22 +338,6 @@ while (scalar @ARGV) {
     undef $Display;
     undef $Count;
     undef $Name;
-    shift;
-  }
-
-  elsif ($ARGV[0] =~ /^r$/) {
-    $Action   = 'revert';
-    $Options  = '-e';
-
-    do {shift; next} if not $ARGV[1] or $ARGV[1] eq '--';
-
-    if ($ARGV[1] =~ /^e$/) {
-      shift;
-    }
-    elsif ($ARGV[1] =~ /^n$/) {
-      $Options = '--no-edit'; shift;
-    }
-
     shift;
   }
 
@@ -414,12 +400,6 @@ while (scalar @ARGV) {
     $Action = 'push'; last;
   }
 
-  elsif ($ARGV[0] =~ /^re$/) {
-    $Action   = 'restore';
-    $Options  = '--staged';
-    shift;
-  }
-
   elsif ($ARGV[0] =~ /^rm$/) {
     $Action   = 'rm';
     $Options  = '--cached';
@@ -454,6 +434,28 @@ while (scalar @ARGV) {
     shift;
   }
 
+  elsif ($ARGV[0] =~ /^res$/) {
+    $Action   = 'restore';
+    $Options  = '--staged';
+    shift;
+  }
+
+  elsif ($ARGV[0] =~ /^rev$/) {
+    $Action   = 'revert';
+    $Options  = '-e';
+
+    do {shift; next} if not $ARGV[1] or $ARGV[1] eq '--';
+
+    if ($ARGV[1] =~ /^e$/) {
+      shift;
+    }
+    elsif ($ARGV[1] =~ /^n$/) {
+      $Options = '--no-edit'; shift;
+    }
+
+    shift;
+  }
+
 } continue {
   SigHandler('ArgErr', $ARGV[0]) if $ARGV[0] and $ARGV[0] ne '--';
 }
@@ -465,12 +467,12 @@ do {$Action = 'status'; $Options = '-s'} if not $Action;
 
 # Throw error if $Action requires targets but none / too few were passed
 if ($TargetReq) {
+  SigHandler('MvDErr') if $Action eq 'mv' and scalar @Targets == 1;
   if (not @Targets) {
     SigHandler('CommErr') if $Action eq 'revert';
     SigHandler('URLErr')  if $Action eq 'clone';
     SigHandler('FileErr');
   }
-  SigHandler('MvDErr') if $Action eq 'mv' and scalar @Targets == 1;
 }
 
 
