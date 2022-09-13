@@ -3,14 +3,15 @@ use strict;
 use warnings;
 
 open(FH, '<', '/sys/class/power_supply/BAT0/status') or die("$!");
-  my $Status = readline(FH);
+  $_ = <FH>;
 close(FH) or die("$!");
-$Status = '+' if ($Status =~ /Charging.*/);
-$Status = '-' if ($Status =~ /Discharging.*/);
-$Status = '#' if ($Status =~ /Full.*/);
+my $Status;
+$Status = '+' if /^Charging\n$/;
+$Status = '-' if /^Discharging\n$/;
+$Status = '#' if /^Full\n$/;
 
 open(FH, '<', '/sys/class/power_supply/BAT0/capacity') or die("$!");
-  my $Capacity = readline(FH);
+  my $Capacity = <FH>;
 close(FH) or die("$!");
 chomp($Capacity);
 
@@ -23,8 +24,6 @@ if ($Capacity <= 15) {
   $Urgency = 'low';
 }
 
-my $Notification =
-  "dunstify -u $Urgency -h string:x-dunst-stack-tag:batWarn 'Battery: $Capacity% ($Status)'";
-
-system($Notification) == 0 or die("$!");
+system("dunstify -u $Urgency -h string:x-dunst-stack-tag:batWarn 'Battery: $Capacity% ($Status)'")
+  == 0 or die("$!");
 
