@@ -9,6 +9,7 @@ my $Status;
 $Status = '+' if /^Charging\n$/;
 $Status = '-' if /^Discharging\n$/;
 $Status = '#' if /^Full\n$/;
+$Status = '?' if not $Status;
 
 open(FH, '<', '/sys/class/power_supply/BAT0/capacity') or die("$!");
   my $Capacity = <FH>;
