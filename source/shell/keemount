@@ -13,7 +13,7 @@
 Umount=1;
 
 ##### vvv #####
-Uuid="2D09-D357"
+Uuid="E3EB-AC20"
 ##### ^^^ #####
 
 Device=$(lsblk --raw -o uuid,name,label | grep $Uuid); Device=${Device#* }
@@ -24,7 +24,7 @@ Mnt=$(mount | grep $Partition); Mnt=${Mnt#*on }; Mnt=${Mnt% type*}
 DbPath=${Mnt:-"/run/media/$USER/$Label"}
 
 ######### v LEADING / IS MANDATORY v ######### 
-DbPath="$DbPath/6_KeePass/db/Database.kdbx"
+DbPath="$DbPath/KeePass/db/Database.kdbx"
 ######### ^                        ^ ######### 
 
 for arg in "$@"; do
