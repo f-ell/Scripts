@@ -7,7 +7,7 @@ my ($Program) = $0 =~ m{^.*/(\w+)$};
 my $Version   = '0.1.0';
 
 my sub Err {
-  printf STDERR "Error: %s\n", $_[1];
+  printf "Error: %s\n", $_[1];
   exit($_[0]) if $_[0] > 0;
 }
 
