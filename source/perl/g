@@ -5,13 +5,11 @@ $\ = "\n";
 
 # potential issues preceeded by 'TODO' comments
 # Issue:
-#   * \ lost to shell interpretation - breaks filenames with spaces unless \\
-#   * fix git-commit --amend targetreq limitation
 #   * triple-exclusives don't work with optproc implementation
+#     * process $Rstr{$_} on a per-character basis and
+#     delete $Rstr{$_} foreach character
 #
 # Feature:
-#   * consider reordering target processing and adding TargetProc
-#
 #   * git-clone --bare, --shallow, n name
 #
 #   * git-branch ('b')    -- list, create, delete
@@ -25,6 +23,11 @@ $\ = "\n";
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
 my $Version   = '0.1.4';
+
+my sub Err {
+  printf STDERR "Error: %s\n", $_[1];
+  exit($_[0]) if $_[0] > 0;
+}
 
 sub D {
   return "    D
@@ -184,11 +187,6 @@ EOF
 ; exit(0);
 }
 
-my sub Err {
-  printf STDERR "Error: %s\n", $_[1];
-  exit($_[0]) if $_[0] > 0;
-}
-
 my $Debug     = '';
 my @Optional  = ('l', 's', 'd');
 my @Requires  = ('a', 'c', 'cl', 'mv', 'rm', 'res', 'rev');
@@ -216,10 +214,10 @@ my sub SigHandler {
 
 # Preliminary checks
 # ------------------
-# Dependencies
+# Dependencies:
 `git -v 2>/dev/null` or SigHandler('DepErr', 'git');
 
-# Help, Debug, Requires / Optional
+# Help, Debug, Requires / Optional:
 if (local $_ = $ARGV[0]) {
   if (/^(?:(-)?h|--help|-\?)$/) {
     do {Help(); exit(0)}            if not $ARGV[1];
@@ -235,19 +233,20 @@ if (local $_ = $ARGV[0]) {
 }
 
 
+# -----------------
 # Option processing
 # -----------------
-my $Action; my @Args; my $NoProc;
-my %Disp = (); my %Prio     = (); my %Rstr = ();
-my $Opts = ''; my @Targets  = ();
+my $Action; my $Opts; my @Targets; my $NoProc;
+my %Disp = (); my %Prio = (); my %Rstr = (); my @Args;
 
 my sub Default() {
   $Action = 'status';
-  $Opts = '-s';
+  $Opts   = '-s';
 }
 
 my sub OptProc($\%\%\%\@) {
   my $Action  = shift; # action
+  my $Opts    = '';    # internal Optstring
   my $rDisp   = shift; # dispatch table
   my $rPrio   = shift; # priority hash
   my $rRstr   = shift; # restrict hash
@@ -256,7 +255,8 @@ my sub OptProc($\%\%\%\@) {
   my %Rstr = %$rRstr; my @Args = @$rArgs;
   undef $rDisp; undef $rPrio; undef $rRstr; undef $rArgs;
 
-  my sub DynProc() {
+  my sub DynProc($) {
+    local $_ = shift;
     return (1, '-'.$_) if $Action eq 'log' and $Disp{_1} eq '-4' and /^\d+$/;
 
     if ($Action eq 'diff' and $Disp{_1} eq '') {
@@ -275,7 +275,7 @@ my sub OptProc($\%\%\%\@) {
     }
 
     return undef;
-  } # ------------------------------
+  }
 
   my sub PrioSort(\%) {
     my $Hash = shift; $Prio{(%$Hash)[0]} = 0 if scalar %$Hash == 1;
@@ -284,16 +284,16 @@ my sub OptProc($\%\%\%\@) {
       $Prio{$a} = 0 if not $Prio{$a}; $Prio{$b} = 0 if not $Prio{$b};
       return -1 * ($Prio{$a} <=> $Prio{$b});
     } keys %$Hash;
-  } # ------------------------------
+  }
 
   while (local $_ = shift @Args) {
-    if ($Disp{$_}) { # processes static options
+    if ($Disp{$_}) { # Processes static options
       $Opts .= $Disp{$_}.' ';
       delete $Disp{$_};
       delete $Disp{$Rstr{$_}} if $Rstr{$_};
     }
-    else { # processes dynamic option
-      my ($K, $V) = DynProc;
+    else { # Processes dynamic option
+      my ($K, $V) = DynProc($_);
       $K and $Disp{'_'.$K} = $V or SigHandler('ArgErr', $_);
     }
   }
@@ -303,7 +303,50 @@ my sub OptProc($\%\%\%\@) {
     delete  $Disp{$Rstr{$_}} if $Rstr{$_};
     $Opts .= $Disp{$_}.' ';
   }
+  return $Opts;
 }
+
+my sub TargetProc($$$) {
+  my $Action    = shift;
+  my $Opts      = shift;
+  my $TargetReq = shift;
+  my @Targets   = @ARGV; shift @Targets if @Targets and $Targets[0] eq '--';
+
+  # Verify sufficient number of targets present:
+  local $_ = $Action;
+  undef $TargetReq if /^commit$/ and $Opts =~ /--amend/;
+  if ($TargetReq) {
+    SigHandler('MvDErr')    if /^mv$/ and scalar @Targets == 1;
+    if (not @Targets) {
+      SigHandler('CommErr') if /^revert$/;
+      SigHandler('URLErr')  if /^clone$/;
+      SigHandler('FileErr');
+    }
+  }
+
+  # Edge-case handling:
+  if (/^clone$/ and local $_ = $Targets[0]) {
+    unless (m{^(?:\.)?/}) {
+      my $Schema = 'https://'    if m{^(?!http(?:s)?://)};
+      my $Host   = 'github.com'  if m{^%.*$};
+      s/%/\//; $Targets[0] = $Schema.$Host.$_;
+    }
+  }
+  elsif (/^rm$/ and $Opts =~ /(?<!--cached)-r(?!--cached)/) {
+    print STDERR "+---------+\n| WARNING |\n+---------+";
+    my $Confirm = '';
+    until ($Confirm =~ /^(?:y|n|\n)$/i) {
+      printf 'Confirm non-cached, recursive removal (y/N): ';
+      $Confirm = <STDIN>;
+    }
+    SigHandler('UserAction') if $Confirm =~ /^(?:n)?\n$/i;
+  }
+
+  # Escape spaces:
+  s/ /\\ /g foreach @Targets;
+  return @Targets;
+}
+
 
 if (local $_ = shift) {
   if (/^a$/) {
@@ -311,21 +354,17 @@ if (local $_ = shift) {
     %Disp = (p => '--patch');
     %Prio = (p => -1);
   }
-
   elsif (/^c$/) {
     $Action = 'commit';
     %Disp = (a => '--amend', _1 => '');
     %Prio = (a => -1);
   }
-
   elsif (/^d$/) {
     $Action = 'diff';
     %Disp = (c => '--cached', _1 => '');
     %Prio = (c => -1);
   }
-
   elsif (/^f$/) { $NoProc = 'True'; $Action = 'fetch'; }
-
   elsif (/^l$/) {
     $Action = 'log';
     %Disp = (
@@ -338,66 +377,53 @@ if (local $_ = shift) {
     %Prio = (s => 2,    l => 1, n => -1,);
     %Rstr = (s => 'l',  l => 's');
   }
-
   # elsif (/^i$/) { $Action = 'init'; %Disp = (b => '--bare', _1 => 'master', _2 => '.'); }
-
   elsif (/^s$/) {
     $Action = 'status';
     %Disp = (s => '-s', l => '--long',  c => '--ahead-behind');
     %Prio = (s => 2,    l => 1,         c => -1);
     %Rstr = (s => 'l',  l => 's');
   }
-
   elsif (/^cl$/) { $Action = 'clone'; }
-
   elsif (/^mv$/) { $Action = 'mv'; }
-
   elsif (/^pl$/) {
     $Action = 'pull';
     %Disp = (n => '--no-rebase',  r => '--rebase');
     %Prio = (n => 2,              r => 1);
     %Rstr = (n => 'r',            r => 'n');
   }
-
   elsif (/^ps$/) { $NoProc = 'True'; $Action = 'push'; }
-
   elsif (/^rm$/) {
     $Action = 'rm';
     %Disp = (c => '--cached', n => ' ', r => '-r');
     %Prio = (c => 2,          n => 1,   r => -1);
     %Rstr = (c => 'n',        n => 'c');
   }
-
   elsif (/^res$/) {
     $Action = 'restore';
     %Disp = (s => '--staged', n => ' ');
     %Prio = (s => 2,          n => 1);
     %Rstr = (s => 'n',        n => 's');
   }
-
   elsif (/^rev$/) {
     $Action = 'revert';
     %Disp = (e => '-e', n => '--no-edit');
     %Prio = (e => 2,    n =>  1);
     %Rstr = (e => 'n',  n => 'e');
   }
-
   elsif (/^--$/) {
     Default();
-    @Targets = @ARGV[0..$#ARGV];
   } else { SigHandler('ArgErr', $_); }
 
-  # Generate @Args and @Targets
-  if (not /^--$/) {
-    until (not @ARGV or $ARGV[0] =~ /^--$/) {
-      push(@Args, shift);
-    }
-    @Targets = @ARGV[1..$#ARGV];
+  if (not /^--$/) { # Generate @Args
+    push(@Args, shift) until not @ARGV or $ARGV[0] eq '--';
   }
 
-} else { Default(); }
-
-OptProc($Action, %Disp, %Prio, %Rstr, @Args) unless $NoProc;
+  unless ($NoProc) {
+    $Opts     = OptProc($Action, %Disp, %Prio, %Rstr, @Args);
+    @Targets  = TargetProc($Action, $Opts, $TargetReq);
+  } else { $Opts = ''; @Targets = (); }
+}   else { Default(); }
 
 
 # Exception handling
@@ -409,43 +435,9 @@ unless ($Debug) {
   }
 }
 
-# Target processing
-# -----------------
-if ($Action eq 'clone' and local $_ = $Targets[0]) {
-  unless (m{^(?:\.)?/}) {
-    my $Schema = 'https://'    if m{^(?!http(?:s)?://)};
-    my $Host   = 'github.com'  if m{^%(.*)$};
-    s/%/\//; $Targets[0] = $Schema.$Host.$_;
-  }
-}
-elsif ($Action eq 'rm' and $Opts =~ /(?<!--cached)-r(?!--cached)/) {
-  print STDERR 'WARNING';
-  my $Confirm = '';
-  until ($Confirm =~ /^(?:y|n|\n)$/i) {
-    printf 'Confirm non-cached, recursive removal (y/N): ';
-    $Confirm = <STDIN>;
-  }
-  SigHandler('UserAction') if $Confirm =~ /^(?:n)?\n$/i;
-}
-
-if ($TargetReq) {
-  local $_ = $Action;
-  SigHandler('MvDErr')    if /^mv$/ and scalar @Targets == 1;
-  if (not @Targets) {
-    SigHandler('CommErr') if /^revert$/;
-    SigHandler('URLErr')  if /^clone$/;
-    SigHandler('FileErr');
-  }
-}
-my $Targets = '';
-do { s/ /\\ /; $Targets .= $_.' '; } foreach @Targets;
-local $/ = ' '; chomp($Targets);
-
-
-# Build command string and replace double whitespace
-# --------------------------------------------------
-my $Command = "git $Action $Opts -- $Targets"; $Command =~ s/\s+/ /g;
-
+# Build command string
+# --------------------
+my $Command = "git $Action $Opts -- @Targets"; $Command =~ s/\s+/ /g;
 
 # Repository check
 # ----------------
@@ -453,16 +445,13 @@ unless ($Debug or $Action =~ /^clone|init$/) {
   `git branch --show-current 2>/dev/null` or SigHandler('RepoErr');
 }
 
-
 # Debugging information / Git command execution
 # ---------------------------------------------
 if ($Debug) {
-  $TargetReq = 'False' if not $TargetReq;
-  $TargetOpt = 'False' if not $TargetOpt;
+  $TargetReq or $TargetReq = 'False';
+  $TargetOpt or $TargetOpt = 'False';
   print "Debug mode output:\n\nAction: $Action\nOpts:   $Opts\n";
-  print "TargetRequired: $TargetReq\nTargetOptional: $TargetOpt\nTarget(s):";
-  foreach (@Targets) {
-    print "    $_";
-  }
+  print "TargetReq: $TargetReq\nTargetOpt: $TargetOpt\nTarget(s):";
+  print "    $_" foreach @Targets;
   print "\nGit command to be run:\n    $Command";
 } else { system("$Command"); }
