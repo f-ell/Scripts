@@ -12,10 +12,7 @@ $\ = "\n";
 # Feature:
 #   * consider reordering target processing and adding TargetProc
 #
-#   * git-add -p
 #   * git-clone --bare, --shallow, n name
-#   * git-diff --cached
-#   * git-restore s/n options for index-restore
 #
 #   * git-branch ('b')    -- list, create, delete
 #   * git-checkout ('ch') -- switch commit
@@ -41,21 +38,23 @@ sub h {
       mation concerning that option. Subsequent parameters are discarded.\n";
 }
 sub a {
-  return "    a -- FILE...
-      Run 'git add' on FILE... .\n";
+  return "    a [p] -- FILE...
+      Run 'git add' on FILE... .
+      'p' (--patch) allows patching only specific hunks.\n";
 }
 sub c {
   return "    c [a] ['commit msg' [%% 'secondary commit msg']] -- FILE...
       Run 'git commit' on FILE... .
-      'a' (as in 'amend') amends the latest commit's commit message.
+      'a' (--amend) amends the latest commit's commit message.
       Optionally takes one or two commit messages, where '%%' acts as a sepa-
       rator between the two. The second commit message is passed as a second
       '-m ...' to git.
       NOTE: double dashes in commit mesages must not be used!\n";
 }
 sub d {
-  return "    d [COMMIT...] [-- FILE...]
-      Run 'git diff' on the repository, COMMIT..., or FILE... .
+  return "    d [c] [COMMIT...] [-- FILE...]
+      Run 'git diff' on the repository, COMMIT... and/or FILE... .
+      'c' (--cached) allows comparisons between HEAD and the index.
 
       SYNOPSIS
         '$Program d COMMIT...'  runs on COMMIT... .
@@ -72,17 +71,18 @@ sub l {
       Run 'git log --abbrev-commit' on the current repository, or on FILE...,
       if any are specified. As normal, subsequent files are ignored. 's' (as in
       'short' (i.e. --pretty=oneline), default) and 'l' (as in 'long'
-      (i.e. --pretty=medium)) dictate the listing format. 'n' (--name-only) dic-
-      tates whether or not the filenames belonging to commits should be shown.
+      (i.e. --pretty=medium)) dictate the listing format.
+      'n' (--name-only) dictates whether or not the filenames belonging to com-
+      mits should be shown.
       Optionally takes an integer to specify the number of commits to show (de-
       fault is 4).\n";
 }
 sub _s {
-  return "    s [slc] [-- FILE...]
+  return "    s [sl] [c] [-- FILE...]
       Run 'git status' on the current repository, or on FILE..., if any are spe-
       cified.
-      's' (-s, default) and 'l' (--long) dictate the listing format. 'c' (as in
-      'compare') shows the branch's status compared to upstream.\n";
+      's' (-s, default) and 'l' (--long) dictate the listing format.
+      'c' (as in 'compare') shows the branch's status compared to upstream.\n";
 }
 sub cl {
   return "    cl -- URL
@@ -117,12 +117,14 @@ sub rm {
       Run 'git rm' on FILE... .
       'c' (--cached, default) and 'n' (as in 'not cached') dictate whether or
       not git should remove files only from the index, or if they should be com-
-      pletely removed from the disk. 'r' (-r) allows recursive removal of entire
-      directory structures (USE WITH CAUTION!).\n";
+      pletely removed from the disk.
+      'r' (-r) allows recursive removal of entire directory structures.\n";
 }
 sub res {
-  return "    res -- FILE...
-      Run 'git restore --staged' on staged FILE... .\n";
+  return "    res [sn] -- FILE...
+      Run 'git restore' on FILE... .
+      's' (--staged, default) and 'n' (as in 'not staged') dictate whether the
+      contents should be restored from HEAD or from the index.\n";
 }
 sub rev {
   return "    rev [en] -- COMMIT...
@@ -232,11 +234,6 @@ if (local $_ = $ARGV[0]) {
   foreach (@Optional) {do {$TargetOpt = 'True'; last} if /^$ARGV[0]$/};
 }
 
-# Repository
-unless ($Debug or (local $_ = $ARGV[0] and /^cl$/)) {
-  `git branch --show-current 2>/dev/null` or SigHandler('RepoErr');
-}
-
 
 # Option processing
 # -----------------
@@ -309,7 +306,11 @@ my sub OptProc($\%\%\%\@) {
 }
 
 if (local $_ = shift) {
-  if (/^a$/) { $Action = 'add'; }
+  if (/^a$/) {
+    $Action = 'add';
+    %Disp = (p => '--patch');
+    %Prio = (p => -1);
+  }
 
   elsif (/^c$/) {
     $Action = 'commit';
@@ -319,7 +320,8 @@ if (local $_ = shift) {
 
   elsif (/^d$/) {
     $Action = 'diff';
-    %Disp = (_1 => '');
+    %Disp = (c => '--cached', _1 => '');
+    %Prio = (c => -1);
   }
 
   elsif (/^f$/) { $NoProc = 'True'; $Action = 'fetch'; }
@@ -368,7 +370,9 @@ if (local $_ = shift) {
 
   elsif (/^res$/) {
     $Action = 'restore';
-    %Disp = (D => '--staged');
+    %Disp = (s => '--staged', n => ' ');
+    %Prio = (s => 2,          n => 1);
+    %Rstr = (s => 'n',        n => 's');
   }
 
   elsif (/^rev$/) {
@@ -441,6 +445,13 @@ local $/ = ' '; chomp($Targets);
 # Build command string and replace double whitespace
 # --------------------------------------------------
 my $Command = "git $Action $Opts -- $Targets"; $Command =~ s/\s+/ /g;
+
+
+# Repository check
+# ----------------
+unless ($Debug or $Action =~ /^clone|init$/) {
+  `git branch --show-current 2>/dev/null` or SigHandler('RepoErr');
+}
 
 
 # Debugging information / Git command execution
