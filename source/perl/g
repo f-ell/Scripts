@@ -18,7 +18,7 @@ $\ = "\n";
 #     * needs exception to be run outside repo (see git-clone)
 #   * git-merge ('m')     -- --abort, --continue
 #   * git-switch ('sw')   -- switch branch
-#   * git-stash 'st'
+#   * git-stash ('st')
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
@@ -28,112 +28,116 @@ my sub Err {
   printf STDERR "Error: %s\n", $_[1];
   exit($_[0]) if $_[0] > 0;
 }
+my sub SigHandler {
+  local $_ = shift;
+  Err(1, 'No help available - '.$_[0])        if /HelpErr/;
+  Err(1, 'Illegal argument - '.$_[0])         if /ArgErr/;
+  Err(2, 'No commit specified!')              if /CommErr/;
+  Err(2, 'Nothing to debug!')                 if /DebugErr/;
+  Err(2, 'No filename specified!')            if /FileErr/;
+  Err(2, 'Missing destination!')              if /MvDErr/;
+  Err(2, 'No URL specified!')                 if /URLErr/;
+  Err(3, 'Not running in a git repository!')  if /RepoErr/;
+  Err(4, 'Dependency not met - '.$_[0])       if /DepErr/;
+  Err(130, 'Execution interrupted by user action.') if /SigInt/;
+}
+$SIG{INT}   = sub { SigHandler('SigInt'); };
+$SIG{TERM}  = sub { SigHandler('SigInt'); };
 
-sub D {
+my sub D {
   return "    D
       Run $Program in debug mode. Print relevant information to STDOUT, but
       don't run the actual git command.\n";
 }
-sub h {
+my sub h {
   return "    [-]h [OPT]
       Print help information and exit.
       When passed a valid option name as the first parameter, only print infor-
       mation concerning that option. Subsequent parameters are discarded.\n";
 }
-sub a {
+my sub a {
   return "    a [p] -- FILE...
       Run 'git add' on FILE... .
-      'p' (--patch) allows patching only specific hunks.\n";
+        'p' => --patch\n";
 }
-sub c {
+my sub c {
   return "    c [a] ['commit msg' [%% 'secondary commit msg']] -- FILE...
       Run 'git commit' on FILE... .
-      'a' (--amend) amends the latest commit's commit message.
+        'a' => --amend
+
       Optionally takes one or two commit messages, where '%%' acts as a sepa-
-      rator between the two. The second commit message is passed as a second
-      '-m ...' to git.
-      NOTE: double dashes in commit mesages must not be used!\n";
+      rator between the two. The second commit message is passed as a submes-
+      sage to git.
+      NOTE: double dashes in commit mesages will break parsing!\n";
 }
-sub d {
+my sub d {
   return "    d [c] [COMMIT...] [-- FILE...]
       Run 'git diff' on the repository, COMMIT... and/or FILE... .
-      'c' (--cached) allows comparisons between HEAD and the index.
-
-      SYNOPSIS
-        '$Program d COMMIT...'  runs on COMMIT... .
-        '$Program d -- FILE...' runs on FILE... .
-        '$Program d COMMIT... -- FILE...' runs on the commit(s) with hash
-        COMMIT... on FILE..., if such a commit exists for FILE... .\n";
+        'c' => --cached\n";
 }
-sub f {
+my sub f {
   return "    f
       Run 'git fetch' on the current repository.\n";
 }
-sub l {
+my sub l {
   return "    l [sl] [n] [INT] [-- FILE...]
-      Run 'git log --abbrev-commit' on the current repository, or on FILE...,
-      if any are specified. As normal, subsequent files are ignored. 's' (as in
-      'short' (i.e. --pretty=oneline), default) and 'l' (as in 'long'
-      (i.e. --pretty=medium)) dictate the listing format.
-      'n' (--name-only) dictates whether or not the filenames belonging to com-
-      mits should be shown.
+      Run 'git log --abbrev-commit' on the current repository, or on FILE... .
+        's' => --pretty=oneline, default
+        'l' => --pretty=medium
+        'n' => --name-only
+
       Optionally takes an integer to specify the number of commits to show (de-
       fault is 4).\n";
 }
-sub _s {
+my sub _s {
   return "    s [sl] [c] [-- FILE...]
-      Run 'git status' on the current repository, or on FILE..., if any are spe-
-      cified.
-      's' (-s, default) and 'l' (--long) dictate the listing format.
-      'c' (as in 'compare') shows the branch's status compared to upstream.\n";
+      Run 'git status' on the current repository, or on FILE... .
+        's' => -s, default
+        'l' => --long
+        'c' => --ahead-behind\n";
 }
-sub cl {
+my sub cl {
   return "    cl -- URL
       Clone the repository located at URL.
       Omitting the URL schema assumes https. A URL starting with a percent sign
-      (%) is assumed to refer to a github repository - access is done via https.
-      Local repositories may be cloned with either relative, or absolute URLs.
+      (%) is assumed to refer to a github repository. Local repositories may be
+      cloned with both relative and absolute URLs.
 
-      SYNOPSIS
-        '$Program cl -- https://github.com/user/repo',
-        '$Program cl -- github.com/user/repo'
-        and '$Program cl -- %user/repo',
-        will all clone the same repository at 'https://github.com/user/repo'\n";
+      '$Program cl -- [https://]github.com/user/repo | %user/repo'
+      will try to clone a repository at 'https://github.com/user/repo'\n";
 }
-sub mv {
+my sub mv {
   return "    mv -- SOURCE... DEST
-      Rename SOURCE... to DEST | DEST/SOURCE... and add the renamed files to the
-      index.\n";
+      Run 'git mv' on SOURCE... DEST.\n";
 }
-sub pl {
+my sub pl {
   return "    pl [nr]
       Run 'git pull' on the current repository.
-      'n' (--no-rebase, default) and 'r' (--rebase) dictate whether or not git
-      should rebase already commited changes.\n";
+        'n' => --no-rebase, default
+        'r' => --rebase\n";
 }
-sub ps {
+my sub ps {
   return "    ps
       Run 'git push' on the current repository.\n";
 }
-sub rm {
+my sub rm {
   return "    rm [cn] [r] -- FILE...
       Run 'git rm' on FILE... .
-      'c' (--cached, default) and 'n' (as in 'not cached') dictate whether or
-      not git should remove files only from the index, or if they should be com-
-      pletely removed from the disk.
-      'r' (-r) allows recursive removal of entire directory structures.\n";
+        'c' => --cached, default
+        'n' => not --cached
+        'r' => -r\n";
 }
-sub res {
+my sub res {
   return "    res [sn] -- FILE...
       Run 'git restore' on FILE... .
-      's' (--staged, default) and 'n' (as in 'not staged') dictate whether the
-      contents should be restored from HEAD or from the index.\n";
+        's' => --staged, default
+        'n' => not --staged\n";
 }
-sub rev {
+my sub rev {
   return "    rev [en] -- COMMIT...
       Run 'git revert' on COMMIT... .
-      'e' (-e, default) and 'n' (--no-edit) dictate whether or not the commit me-
-      ssage may be changed before the commit is reverted.\n";
+        'e' => -e, default
+        'n' => --no-edit\n";
 }
 
 my %Help = (
@@ -143,7 +147,6 @@ my %Help = (
   rm  => rm(),
   res => res(), rev => rev()
 );
-
 sub Help {
 print <<EOF
 NAME
@@ -173,7 +176,7 @@ EXIT STATUS
     2, when missing filename or similar
     3, when trying to run outside of a git repository
     4, on dependency error
-  130, on specific user action
+  130, on user action
 
 DEPENDENCIES
     git
@@ -187,29 +190,11 @@ EOF
 ; exit(0);
 }
 
+
 my $Debug     = '';
-my @Optional  = ('l', 's', 'd');
+my @Optional  = ('d', 'l', 's');
 my @Requires  = ('a', 'c', 'cl', 'mv', 'rm', 'res', 'rev');
 my $TargetOpt = ''; my $TargetReq = '';
-
-my sub SigHandler {
-  local $_ = shift;
-  Err(1, 'No help available - '.$_[0])        if /HelpErr/;
-  Err(1, 'Illegal argument - '.$_[0])         if /ArgErr/;
-
-  Err(2, 'No commit specified!')              if /CommErr/;
-  Err(2, 'Nothing to debug!')                 if /DebugErr/;
-  Err(2, 'No filename specified!')            if /FileErr/;
-  Err(2, 'Missing destination!')              if /MvDErr/;
-  Err(2, 'No URL specified!')                 if /URLErr/;
-
-  Err(3, 'Not running in a git repository!')  if /RepoErr/;
-  Err(4, 'Dependency not met - '.$_[0])       if /DepErr/;
-
-  Err(130, 'Execution interrupted by user action.') if /UserAction/;
-
-  do {$Debug = 'True'; shift @ARGV} if /DebugMode/;
-}
 
 
 # Preliminary checks
@@ -220,16 +205,16 @@ my sub SigHandler {
 # Help, Debug, Requires / Optional:
 if (local $_ = $ARGV[0]) {
   if (/^(?:(-)?h|--help|-\?)$/) {
-    do {Help(); exit(0)}            if not $ARGV[1];
+    do { Help(); exit(0) }          if not $ARGV[1];
     SigHandler('HelpErr', $ARGV[1]) if not $Help{$ARGV[1]};
     print "$Help{$ARGV[1]}"; exit(0);
   }
 
-  SigHandler('DebugMode')     if /^D$/;
-  SigHandler('DebugErr')      if $Debug and not $ARGV[0];
+  do { $Debug = 'True'; shift; }  if /^D$/;
+  SigHandler('DebugErr')          if $Debug and not $ARGV[0];
 
-  foreach (@Requires) {do {$TargetReq = 'True'; last} if /^$ARGV[0]$/};
-  foreach (@Optional) {do {$TargetOpt = 'True'; last} if /^$ARGV[0]$/};
+  foreach (@Requires) { do { $TargetReq = 'True'; last } if /^$ARGV[0]$/ };
+  foreach (@Optional) { do { $TargetOpt = 'True'; last } if /^$ARGV[0]$/ };
 }
 
 
@@ -339,7 +324,7 @@ my sub TargetProc($$$) {
       printf 'Confirm non-cached, recursive removal (y/N): ';
       $Confirm = <STDIN>;
     }
-    SigHandler('UserAction') if $Confirm =~ /^(?:n)?\n$/i;
+    SigHandler('SigInt') if $Confirm =~ /^(?:n)?\n$/i;
   }
 
   # Escape spaces:
