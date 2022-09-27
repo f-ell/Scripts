@@ -10,7 +10,6 @@ $\ = "\n";
 #     * needs adapting to individual help calls for single option
 #
 # Feature:
-#   * git-checkout ('ch') -- switch commit
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
@@ -156,8 +155,9 @@ my sub st {
         's' => show\n";
 }
 my sub sw {
-  return "    sw -- BRANCH
-      Run 'git switch' on BRANCH.\n";
+  return "    sw [d] -- BRANCH|COMMIT
+      Run 'git switch' on BRANCH or COMMIT.
+        'd' => -d\n";
 }
 my sub res {
   return "    res [ns] -- FILE...
@@ -454,7 +454,11 @@ if (local $_ = shift) {
     %Prio = (c => 1,      l => 2,      o => 1,      u => 1,      s => 1);
     %Rstr = (c => 'lous', l => 'cuos', o => 'clus', u => 'clos', s => 'clou');
   }
-  elsif (/^sw$/) { $Action = 'switch'; }
+  elsif (/^sw$/) {
+    $Action = 'switch';
+    %Disp = (d => '-d');
+    %Prio = (d => -1);
+  }
   elsif (/^res$/) {
     $Action = 'restore';
     %Disp = (s => '--staged', n => ' ');
