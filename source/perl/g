@@ -5,20 +5,12 @@ $\ = "\n";
 
 # potential issues preceeded by 'TODO' comments
 # Issue:
-#   * triple-exclusives don't work with optproc implementation
-#     * process $Rstr{$_} on a per-character basis and
-#     delete $Rstr{$_} foreach character
+#   * sort %Help keys and loop over in full help or:
+#   * maintain List containing subrefs in order and loop over
+#     * needs adapting to individual help calls for single option
 #
 # Feature:
-#   * git-clone --bare, --shallow, n name
-#
-#   * git-branch ('b')    -- list, create, delete
 #   * git-checkout ('ch') -- switch commit
-#   * git-init ('i(n)') (option for branch, bare, directory ($TargetOpt))
-#     * needs exception to be run outside repo (see git-clone)
-#   * git-merge ('m')     -- --abort, --continue
-#   * git-switch ('sw')   -- switch branch
-#   * git-stash ('st')
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
@@ -30,16 +22,17 @@ my sub Err {
 }
 my sub SigHandler {
   local $_ = shift;
-  Err(1, 'No help available - '.$_[0])        if /HelpErr/;
-  Err(1, 'Illegal argument - '.$_[0])         if /ArgErr/;
-  Err(2, 'No commit specified!')              if /CommErr/;
-  Err(2, 'Nothing to debug!')                 if /DebugErr/;
-  Err(2, 'No filename specified!')            if /FileErr/;
-  Err(2, 'Missing destination!')              if /MvDErr/;
-  Err(2, 'No URL specified!')                 if /URLErr/;
-  Err(3, 'Not running in a git repository!')  if /RepoErr/;
-  Err(4, 'Dependency not met - '.$_[0])       if /DepErr/;
-  Err(130, 'Execution interrupted by user action.') if /SigInt/;
+  Err(  1, 'No help available - '.$_[0])  if /^HelpErr$/;
+  Err(  1, 'Illegal argument - '.$_[0])   if /^ArgErr$/;
+  Err(  2, 'Missing branch name!')        if /^BranchErr$/;
+  Err(  2, 'Missing commit!')             if /^CommErr$/;
+  Err(  2, 'Nothing to debug!')           if /^DebugErr$/;
+  Err(  2, 'Missing filename!')           if /^FileErr$/;
+  Err(  2, 'Missing destination!')        if /^MvDErr$/;
+  Err(  2, 'Missing URL!')                if /^URLErr$/;
+  Err(  3, 'Not in a git repository!')    if /^RepoErr$/;
+  Err(  4, 'Dependency not met - '.$_[0]) if /^DepErr$/;
+  Err(130, 'Interrupt received!')         if /^SigInt$/;
 }
 $SIG{INT}   = sub { SigHandler('SigInt'); };
 $SIG{TERM}  = sub { SigHandler('SigInt'); };
@@ -60,6 +53,14 @@ my sub a {
       Run 'git add' on FILE... .
         'p' => --patch\n";
 }
+my sub b {
+  return "    b [cdlm] [-- BRANCH...]
+      Run 'git branch' on BRANCH.
+        'c' => -c
+        'd' => -d
+        'l' => --list, default
+        'm' => -m\n";
+}
 my sub c {
   return "    c [a] ['commit msg' [%% 'secondary commit msg']] -- FILE...
       Run 'git commit' on FILE... .
@@ -79,26 +80,44 @@ my sub f {
   return "    f
       Run 'git fetch' on the current repository.\n";
 }
+my sub i {
+  return "    i [b] [BRANCH] [-- DIR]
+      Run 'git init' on the current directory or DIR.
+        'b' => --bare
+
+      Optionally uses BRANCH as the initial branch name, instead of the default
+      name 'master'.\n";
+}
 my sub l {
-  return "    l [sl] [n] [INT] [-- FILE...]
+  return "    l [ls] [n] [INT] [-- FILE...]
       Run 'git log --abbrev-commit' on the current repository, or on FILE... .
-        's' => --pretty=oneline, default
         'l' => --pretty=medium
+        's' => --pretty=oneline, default
         'n' => --name-only
 
       Optionally takes an integer to specify the number of commits to show (de-
       fault is 4).\n";
 }
+my sub _m {
+  return "    m [acq] [-- BRANCH]
+      Run 'git merge' on BRANCH.
+        'a' => --abort
+        'c' => --continue
+        'q' => --quit\n";
+}
 my sub _s {
-  return "    s [sl] [c] [-- FILE...]
+  return "    s [ls] [c] [-- FILE...]
       Run 'git status' on the current repository, or on FILE... .
-        's' => -s, default
         'l' => --long
+        's' => -s, default
         'c' => --ahead-behind\n";
 }
 my sub cl {
-  return "    cl -- URL
-      Clone the repository located at URL.
+  return "    cl [INT] -- URL [DIR]
+      Clone the repository located at URL to DIR.
+
+      Optionally takes an integer to specify the clone depth.
+
       Omitting the URL schema assumes https. A URL starting with a percent sign
       (%) is assumed to refer to a github repository. Local repositories may be
       cloned with both relative and absolute URLs.
@@ -127,11 +146,24 @@ my sub rm {
         'n' => not --cached
         'r' => -r\n";
 }
+my sub st {
+  return "    st [clous] [-- FILE...]
+      Run 'git stash' on FILE... .
+        'c' => clear
+        'l' => list
+        'o' => pop
+        'u' => push
+        's' => show\n";
+}
+my sub sw {
+  return "    sw -- BRANCH
+      Run 'git switch' on BRANCH.\n";
+}
 my sub res {
-  return "    res [sn] -- FILE...
+  return "    res [ns] -- FILE...
       Run 'git restore' on FILE... .
-        's' => --staged, default
-        'n' => not --staged\n";
+        'n' => not --staged
+        's' => --staged, default\n";
 }
 my sub rev {
   return "    rev [en] -- COMMIT...
@@ -141,10 +173,10 @@ my sub rev {
 }
 
 my %Help = (
-  D => D(), h => h(), a => a(), c => c(),
-  d => d(), f => f(), l => l(), s => _s(),
+  D => D(), h => h(), a => a(), b => b(), c => c(), d => d(), f => f(),
+  i => i(), l => l(), m => _m(), s => _s(),
   cl => cl(), mv => mv(), pl => pl(), ps => ps(),
-  rm  => rm(),
+  rm => rm(), st => st(), sw => sw(),
   res => res(), rev => rev()
 );
 sub Help {
@@ -153,7 +185,7 @@ NAME
     $Program - shorthands for git commands
 
 SYNOPSIS
-    $Program [D] [OPTS [SUBOPTS]] [-- FILE...|COMMIT...|URL]
+    $Program [D] [OPT [SUBOPTS]] [-- BRANCH|COMMIT...|FILE...|URL]
 
 DESCRIPTION
     $Program aims to provide some useful shorthands for basic git operations. It
@@ -161,14 +193,13 @@ DESCRIPTION
     Running $Program without any options runs 'git status -s' on the repository.
 
     $Program currently provides shorthands for the following commands:
-    add, clone, commit, diff, fetch, log, mv, pull, push, rm, restore, revert,
-    status
+    add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
+    rm, restore, revert, stash, status, switch
 
 OPTIONS
-$Help{D}\n$Help{h}\n$Help{a}\n$Help{c}
-$Help{d}\n$Help{f}\n$Help{l}\n$Help{s}
-$Help{cl}\n$Help{mv}\n$Help{pl}\n$Help{ps}
-$Help{rm}
+$Help{D}\n$Help{h}\n$Help{a}\n$Help{b}\n$Help{c}\n$Help{d}\n$Help{f}\n$Help{i}
+$Help{l}\n$Help{m}\n$Help{s}
+$Help{cl}\n$Help{mv}\n$Help{pl}\n$Help{ps}\n$Help{rm}\n$Help{st}\n$Help{sw}
 $Help{res}\n$Help{rev}
 EXIT STATUS
     0, on success
@@ -192,8 +223,8 @@ EOF
 
 
 my $Debug     = '';
-my @Optional  = ('d', 'l', 's');
-my @Requires  = ('a', 'c', 'cl', 'mv', 'rm', 'res', 'rev');
+my @Optional  = ('d', 'i', 'l', 's', 'st');
+my @Requires  = ('a', 'b', 'c', 'm', 'cl', 'mv', 'rm', 'sw', 'res', 'rev');
 my $TargetOpt = ''; my $TargetReq = '';
 
 
@@ -242,13 +273,9 @@ my sub OptProc($\%\%\%\@) {
 
   my sub DynProc($) {
     local $_ = shift;
-    return (1, '-'.$_) if $Action eq 'log' and $Disp{_1} eq '-4' and /^\d+$/;
-
-    if ($Action eq 'diff' and $Disp{_1} eq '') {
-      unshift(@Args, $_); my $Commits = join(' ', @Args); undef @Args;
-      return(1, $Commits);
+    if ($Action eq 'clone' and $Disp{_1} eq '' and /^\d+$/) {
+      return (1, '--depth '.$_) 
     }
-
     if ($Action eq 'commit' and $Disp{_1} eq '') {
       my $Msg1; my $Msg2;
       unshift(@Args, $_); s/"/\\"/g foreach @Args;
@@ -258,12 +285,20 @@ my sub OptProc($\%\%\%\@) {
       undef @Args;
       return (1, $Msg1.' '.$Msg2);
     }
-
+    if ($Action eq 'diff' and $Disp{_1} eq '') {
+      unshift(@Args, $_); my $Commits = join(' ', @Args); undef @Args;
+      return(1, $Commits);
+    }
+    if ($Action eq 'init' and $Disp{_1} eq '-b master') {
+      return (1, '-b '.$_);
+    }
+    return (1, '-'.$_) if $Action eq 'log' and $Disp{_1} eq '-4' and /^\d+$/;
     return undef;
   }
 
   my sub PrioSort(\%) {
-    my $Hash = shift; $Prio{(%$Hash)[0]} = 0 if scalar %$Hash == 1;
+    my $Hash = shift;
+    $Prio{(%$Hash)[0]} = 0 if scalar %$Hash == 1 and scalar %Prio == 0;
     sort
     { $Prio{$a} = 9 if $a eq 'D';     $Prio{$b} = 9 if $b eq 'D';
       $Prio{$a} = 0 if not $Prio{$a}; $Prio{$b} = 0 if not $Prio{$b};
@@ -271,11 +306,19 @@ my sub OptProc($\%\%\%\@) {
     } keys %$Hash;
   }
 
+  my sub RstrRemove($) {
+    my $K = shift;
+    if (local $_ = $Rstr{$K}) {
+      my @Rstr = split('');
+      delete $Disp{$_} foreach @Rstr;
+    }
+  }
+
   while (local $_ = shift @Args) {
     if ($Disp{$_}) { # Processes static options
       $Opts .= $Disp{$_}.' ';
       delete $Disp{$_};
-      delete $Disp{$Rstr{$_}} if $Rstr{$_};
+      RstrRemove($_);
     }
     else { # Processes dynamic option
       my ($K, $V) = DynProc($_);
@@ -284,8 +327,8 @@ my sub OptProc($\%\%\%\@) {
   }
 
   foreach (PrioSort %Disp) {
-    next if $Prio{$_} == -1 or not $Disp{$_};
-    delete  $Disp{$Rstr{$_}} if $Rstr{$_};
+    next if $Prio{$_} <= -1 or not $Disp{$_};
+    RstrRemove($_);
     $Opts .= $Disp{$_}.' ';
   }
   return $Opts;
@@ -299,12 +342,15 @@ my sub TargetProc($$$) {
 
   # Verify sufficient number of targets present:
   local $_ = $Action;
+  undef $TargetReq if /^branch$/ and $Opts =~ /--list/;
   undef $TargetReq if /^commit$/ and $Opts =~ /--amend/;
+  undef $TargetReq if /^merge$/  and $Opts =~ /--(abort|continue|quit)/;
   if ($TargetReq) {
     SigHandler('MvDErr')    if /^mv$/ and scalar @Targets == 1;
     if (not @Targets) {
-      SigHandler('CommErr') if /^revert$/;
-      SigHandler('URLErr')  if /^clone$/;
+      SigHandler('BranchErr') if /^branch|merge|switch$/;
+      SigHandler('URLErr')    if /^clone$/;
+      SigHandler('CommErr')   if /^revert$/;
       SigHandler('FileErr');
     }
   }
@@ -339,6 +385,12 @@ if (local $_ = shift) {
     %Disp = (p => '--patch');
     %Prio = (p => -1);
   }
+  elsif (/^b$/) {
+    $Action = 'branch';
+    %Disp = (c => '-c',   d => '-d',  l => '--list',  m => '-m');
+    %Prio = (c => 1,      d => 1,     l => 2,         m => 1);
+    %Rstr = (c => 'dlm',  d => 'clm', l => 'cdm',     m => 'cdl');
+  }
   elsif (/^c$/) {
     $Action = 'commit';
     %Disp = (a => '--amend', _1 => '');
@@ -353,23 +405,33 @@ if (local $_ = shift) {
   elsif (/^l$/) {
     $Action = 'log';
     %Disp = (
-      D => '--abbrev-commit',
-      s => '--pretty=oneline',
-      l => '--pretty=medium',
-      n => '--name-only',
-      _1 => '-4'
+      D => '--abbrev-commit',  s => '--pretty=oneline', l => '--pretty=medium',
+      n => '--name-only',     _1 => '-4'
     );
-    %Prio = (s => 2,    l => 1, n => -1,);
+    %Prio = (s => 2,    l => 1,   n => -1,);
     %Rstr = (s => 'l',  l => 's');
   }
-  # elsif (/^i$/) { $Action = 'init'; %Disp = (b => '--bare', _1 => 'master', _2 => '.'); }
+  elsif (/^i$/) {
+    $Action = 'init';
+    %Disp = (b => '--bare', _1 => '-b master');
+    %Prio = (b => -1);
+  }
+  elsif (/^m$/) {
+    $Action = 'merge';
+    %Disp = (a => '--abort',  c => '--continue',  q => '--quit');
+    %Prio = (a => -1,         c => -2,            q => -2);
+    %Rstr = (a => 'cq',       c => 'aq',          q => 'ac');
+  }
   elsif (/^s$/) {
     $Action = 'status';
     %Disp = (s => '-s', l => '--long',  c => '--ahead-behind');
     %Prio = (s => 2,    l => 1,         c => -1);
     %Rstr = (s => 'l',  l => 's');
   }
-  elsif (/^cl$/) { $Action = 'clone'; }
+  elsif (/^cl$/) {
+    $Action = 'clone';
+    %Disp = (_1 => '');
+  }
   elsif (/^mv$/) { $Action = 'mv'; }
   elsif (/^pl$/) {
     $Action = 'pull';
@@ -384,6 +446,15 @@ if (local $_ = shift) {
     %Prio = (c => 2,          n => 1,   r => -1);
     %Rstr = (c => 'n',        n => 'c');
   }
+  elsif (/^st$/) {
+    $Action = 'stash';
+    %Disp = (
+      c => 'clear', l => 'list', o => 'pop', u => 'push', s => 'show'
+    );
+    %Prio = (c => 1,      l => 2,      o => 1,      u => 1,      s => 1);
+    %Rstr = (c => 'lous', l => 'cuos', o => 'clus', u => 'clos', s => 'clou');
+  }
+  elsif (/^sw$/) { $Action = 'switch'; }
   elsif (/^res$/) {
     $Action = 'restore';
     %Disp = (s => '--staged', n => ' ');
@@ -416,7 +487,7 @@ if (local $_ = shift) {
 unless ($Debug) {
   if ($Action eq 'status' and $Opts =~ /--ahead-behind/) {
     `git status --ahead-behind` =~ /(Your branch is .*\.)/;
-    print $1; exit(0);
+    print $1 if $1; exit(0);
   }
 }
 
@@ -427,7 +498,7 @@ my $Command = "git $Action $Opts -- @Targets"; $Command =~ s/\s+/ /g;
 # Repository check
 # ----------------
 unless ($Debug or $Action =~ /^clone|init$/) {
-  `git branch --show-current 2>/dev/null` or SigHandler('RepoErr');
+  `git rev-parse --is-inside-git-dir 2>/dev/null` or SigHandler('RepoErr');
 }
 
 # Debugging information / Git command execution
@@ -435,7 +506,7 @@ unless ($Debug or $Action =~ /^clone|init$/) {
 if ($Debug) {
   $TargetReq or $TargetReq = 'False';
   $TargetOpt or $TargetOpt = 'False';
-  print "Debug mode output:\n\nAction: $Action\nOpts:   $Opts\n";
+  print "- DEBUG MODE -\nAction: $Action\nOpts:   $Opts\n";
   print "TargetReq: $TargetReq\nTargetOpt: $TargetOpt\nTarget(s):";
   print "    $_" foreach @Targets;
   print "\nGit command to be run:\n    $Command";
