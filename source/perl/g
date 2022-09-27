@@ -1,14 +1,7 @@
 #!/usr/bin/perl
-use warnings;
-use strict;
-$\ = "\n";
+use warnings; use strict; $\ = "\n";
 
-# potential issues preceeded by 'TODO' comments
 # Issue:
-#   * sort %Help keys and loop over in full help or:
-#   * maintain List containing subrefs in order and loop over
-#     * needs adapting to individual help calls for single option
-#
 # Feature:
 
 my $Author    = 'Nico Pareigis';
@@ -172,16 +165,10 @@ my sub rev {
         'n' => --no-edit\n";
 }
 
-my %Help = (
-  D => D(), h => h(), a => a(), b => b(), c => c(), d => d(), f => f(),
-  i => i(), l => l(), m => _m(), s => _s(),
-  cl => cl(), mv => mv(), pl => pl(), ps => ps(),
-  rm => rm(), st => st(), sw => sw(),
-  res => res(), rev => rev()
-);
+my @Help =
+  (D, h, a, b, c, d, f, i, l, _m, _s, cl, mv, pl, ps, rm, st, sw, res, rev);
 sub Help {
-print <<EOF
-NAME
+print "NAME
     $Program - shorthands for git commands
 
 SYNOPSIS
@@ -196,12 +183,9 @@ DESCRIPTION
     add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
     rm, restore, revert, stash, status, switch
 
-OPTIONS
-$Help{D}\n$Help{h}\n$Help{a}\n$Help{b}\n$Help{c}\n$Help{d}\n$Help{f}\n$Help{i}
-$Help{l}\n$Help{m}\n$Help{s}
-$Help{cl}\n$Help{mv}\n$Help{pl}\n$Help{ps}\n$Help{rm}\n$Help{st}\n$Help{sw}
-$Help{res}\n$Help{rev}
-EXIT STATUS
+OPTIONS";
+print foreach @Help;
+print "EXIT STATUS
     0, on success
     1, on argument error
     2, when missing filename or similar
@@ -216,16 +200,13 @@ VERSION
     $Version
 
 AUTHOR(S)
-    $Author
-EOF
-; exit(0);
+    $Author";
 }
 
 
-my $Debug     = '';
+my $Debug     = ''; my $TargetOpt = ''; my $TargetReq = '';
 my @Optional  = ('d', 'i', 'l', 's', 'st');
 my @Requires  = ('a', 'b', 'c', 'm', 'cl', 'mv', 'rm', 'sw', 'res', 'rev');
-my $TargetOpt = ''; my $TargetReq = '';
 
 
 # Preliminary checks
@@ -236,9 +217,9 @@ my $TargetOpt = ''; my $TargetReq = '';
 # Help, Debug, Requires / Optional:
 if (local $_ = $ARGV[0]) {
   if (/^(?:(-)?h|--help|-\?)$/) {
-    do { Help(); exit(0) }          if not $ARGV[1];
-    SigHandler('HelpErr', $ARGV[1]) if not $Help{$ARGV[1]};
-    print "$Help{$ARGV[1]}"; exit(0);
+    do { Help(); exit(0); }       if not $ARGV[1];
+    do { print $_[0]; exit(0); }  if local @_ = grep(/^\s*$ARGV[1]\W/, @Help);
+    SigHandler('HelpErr', $ARGV[1]);
   }
 
   do { $Debug = 'True'; shift; }  if /^D$/;
@@ -293,6 +274,7 @@ my sub OptProc($\%\%\%\@) {
       return (1, '-b '.$_);
     }
     return (1, '-'.$_) if $Action eq 'log' and $Disp{_1} eq '-4' and /^\d+$/;
+
     return undef;
   }
 
