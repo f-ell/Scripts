@@ -1,12 +1,11 @@
 #!/usr/bin/perl
 use warnings; use strict; $\ = "\n";
-
-# Issue:
-# Feature:
+# Note: As of 28/09/2022, this script is, mostly, in maintenance mode.
+# Issue-tracker:
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.1.4';
+my $Version   = '0.1.4 - maintenance mode';
 
 my sub Err {
   printf STDERR "Error: %s\n", $_[1];
@@ -24,10 +23,8 @@ my sub SigHandler {
   Err(  2, 'Missing URL!')                if /^URLErr$/;
   Err(  3, 'Not in a git repository!')    if /^RepoErr$/;
   Err(  4, 'Dependency not met - '.$_[0]) if /^DepErr$/;
-  Err(130, 'Interrupt received!')         if /^SigInt$/;
-}
-$SIG{INT}   = sub { SigHandler('SigInt'); };
-$SIG{TERM}  = sub { SigHandler('SigInt'); };
+  Err(130, 'Received interrupt!')         if /^INT|TERM$/;
+} @SIG{'INT','TERM'} = (\&SigHandler) x 2;
 
 my sub D {
   return "    D
@@ -75,20 +72,16 @@ my sub f {
 my sub i {
   return "    i [b] [BRANCH] [-- DIR]
       Run 'git init' on the current directory or DIR.
-        'b' => --bare
-
-      Optionally uses BRANCH as the initial branch name, instead of the default
-      name 'master'.\n";
+        'b'      => --bare
+        'BRANCH' => -b BRANCH (default is '-b master')\n";
 }
 my sub l {
   return "    l [ls] [n] [INT] [-- FILE...]
       Run 'git log --abbrev-commit' on the current repository, or on FILE... .
-        'l' => --pretty=medium
-        's' => --pretty=oneline, default
-        'n' => --name-only
-
-      Optionally takes an integer to specify the number of commits to show (de-
-      fault is 4).\n";
+        'l'   => --pretty=medium
+        's'   => --pretty=oneline, default
+        'n'   => --name-only
+        'INT' => -INT (default it '-4')\n";
 }
 my sub _m {
   return "    m [acq] [-- BRANCH]
@@ -107,8 +100,7 @@ my sub _s {
 my sub cl {
   return "    cl [INT] -- URL [DIR]
       Clone the repository located at URL to DIR.
-
-      Optionally takes an integer to specify the clone depth.
+        'INT' => --depth INT
 
       Omitting the URL schema assumes https. A URL starting with a percent sign
       (%) is assumed to refer to a github repository. Local repositories may be
@@ -352,7 +344,7 @@ my sub TargetProc($$$) {
       printf 'Confirm non-cached, recursive removal (y/N): ';
       $Confirm = <STDIN>;
     }
-    SigHandler('SigInt') if $Confirm =~ /^(?:n)?\n$/i;
+    SigHandler('INT') if $Confirm =~ /^(?:n)?\n$/i;
   }
 
   # Escape spaces:
