@@ -1,23 +1,14 @@
 #!/bin/sh
 
-# TODO
-# move '-1' implementation into encapsulated function
-# -> no need to constantly re-set $OneFile
-
-# Add $ExcludeFile as --ignore-file and update usage
-
-
-# Deprecated (save if issues arise):
-# FZF_DEFAULT_OPTS='-i --tiebreak=begin --reverse --prompt="" --height=20%
-#   --no-color --no-info'
+# * move (fzy) '-1' implementation into function
+# * Add $ExcludeFile as --ignore-file and update usage
 
 Authors='Nico Pareigis'
 Program=${0##*/}
 Version=0.3.0
 
 Usage() {
-printf "
-NAME
+printf "NAME
     $Program - (Neo)Vim-Fuzzy-Finder - find file in filesystem and open it with
     Vi, Vim, or NeoVim
 
@@ -27,24 +18,22 @@ SYNOPSIS
 DESCRIPTION
     Recursively search through directories and select one or more files. The sel-
     ected file(s) will be opened in either Vi, Vim, or NeoVim. Should more than
-    one of the aforementioned programs be installed, %s will prioritize them in
-    reverse order. Optionally, specify a search directory and / or expression to
-    be matched.
+    one of the aforementioned programs be installed, $Program will prioritize
+    them in reverse order. Optionally, specify a search directory and / or ex-
+    pression to be matched.
 
-
-    DIR specifies the directory to run %s in; the default is \$HOME.
+    DIR specifies the directory to run $Program in; the default is \$HOME.
 
     '-- EXP' allows the user to specify multiple search expressions / filenames
-    as a space-separated list. If %s finds a file matching the expression that
-    file is added to a list; each file in the list will later be opened in its
-    own buffer. If a match only has a single candidate, this is done automatica-
-    lly. Otherwise, fzf or fzy is used to interactively select a candidate.
+    as a space-separated list. If $Program finds a file matching the expression
+    that file is added to a list; each file in the list will later be opened in
+    its own buffer. If a match only has a single candidate, this is done auto-
+    matically. Otherwise, fzf or fzy is used to interactively select a candidate.
 
     When using fzf as the fuzzy finder, part of the user's \$FZF_DEFAULT_OPTS may
     temporarily be overwritten.
 
-
-    IMPORTANT NOTE:
+    NOTE:
     Due to shell limitations, expressions / filenames containing spaces are
     currently unsupported and should not be used!
 
@@ -65,10 +54,10 @@ OPTIONS
       Furthermore, patterns should consist of the shortest, unambiguous part of
       the filenames / directories one wishes to exclude.
 
-      By default %s tries to source a file called 'exclude.nff', located in the
-      script's directory, to filter unwanted search results. If one wants to not
-      exclude any results, ensure a file with aforementioned name does not exist
-      in the script's directory, or pass '-' as FILE to this option.
+      By default $Program tries to source a file called 'exclude.nff', located
+      in the script's directory, to filter unwanted search results. If one wants
+      to not exclude any results, ensure a file with aforementioned name does
+      not exist in the script's directory, or pass '-' as FILE to this option.
 
       EXAMPLE:
       Assume the contents of '/path/to/first/directory/' are to be discarded but
@@ -82,8 +71,8 @@ OPTIONS
       can easily be expanded upon.
 
     -g, --no-git-ignore
-      %s excludes any file / directory matching '.git*' that it encounters du-
-      ring the search. Using this option prevents those matches from being re-
+      $Program excludes any file / directory matching '.git*' that it encounters
+      during the search. Using this option prevents those matches from being re-
       moved from search results.
       Can be used in combination with patterns, specified either in a separate
       file, or on the command line (see -e and -p respectively), to only show
@@ -98,10 +87,9 @@ OPTIONS
       See -e for an example on proper PATTERN formatting.
 
     -y, --fzy
-      Force fzy as the fuzzy finder. Without this, %s will default to using fzf,
-      if both fzf and fzy are installed on the system.
-      Note: when using this option no extra dependency or version checks are per-
-      formed for fzy.
+      Force fzy as the fuzzy finder. Without this, $Program will default to
+      using fzf, if both fzf and fzy are installed. No dependency or version
+      checks are performed for fzy when using this option.
 
 EXIT STATUS
       0, on success.
@@ -121,7 +109,7 @@ VERSION
 
 AUTHOR(S)
     $Authors
-" "$Program" "$Program" "$Program" "$Program" "$Program" "$Program"
+"
 }
 
 
@@ -134,30 +122,20 @@ Err() {
 }
 
 
-unset Interrupt DependencyError VersionWarning DepthError DirError \
-  ExcludeFileError FileNotFoundWarning
+unset SigInt DepErr VerWar DetErr DirErr ExlErr FnfWar
 SigHandler() {
-  [ "$Interrupt" = True ] && Err 130 "Keyboard Interrupt."
-
-  [ "$DependencyError"  = True ] && Err 3 "Dependency not met - $1."
-  [ "$VersionWarning"   = True ] \
-    && Warn "'$1' version ($2) is not verified to work."
-
-  [ "$DepthError"           = True ] \
-    && Err 1 "Depth has to be a positive, non-zero integer."
-  [ "$DirError"             = True ] \
-    && Err 1 "Directory does not exist '$1'."
-  [ "$ExcludeFileError"     = True ] \
-    && Err 1 "Pattern File '$1' doesn't exist, isn't a file, or doesn't have read permissions."
-  [ "$FileNotFoundWarning"  = True ] \
-    && Warn "File not found '$1' - skipping."
-
-  [ "$NoFile" = True ] && Err 2 'No file to open.'
+  [ "$VerWar" = True ] && Warn "'$1' version ($2) is not verified to work."
+  [ "$FnfWar" = True ] && Warn "File not found '$1' - skipping."
+  [ "$DetErr" = True ] && Err 1 "Depth has to be a positive, non-zero integer."
+  [ "$DirErr" = True ] && Err 1 "Directory does not exist '$1'."
+  [ "$ExlErr" = True ] && Err 1 "Pattern File '$1' doesn't exist, isn't a file, or doesn't have read permissions."
+  [ "$FilErr" = True ] && Err 2 'No file to open.'
+  [ "$DepErr" = True ] && Err 3 "Dependency not met - $1."
+  [ "$SigInt" = True ] && Err 130 "Keyboard interrupt."
 }
 
 
-# Checks if all dependencies in $@ are present on the system
-DepAllOf() {
+DepAllOf() { # Checks if all dependencies in $@ are present
   for Dep in "$@"; do
     if ! command -v $Dep 1>/dev/null; then
       MissingDepCount=$((MissingDepCount+1))
@@ -166,8 +144,7 @@ DepAllOf() {
   done
 }
 
-# Checks if at least one dependency in $@ is present on the system
-DepAnyOf() {
+DepAnyOf() { # Checks if any dependency in $@ is present
   for Dep in "$@"; do
     if command -v $Dep 1>/dev/null; then
       Use=$Dep
@@ -180,28 +157,22 @@ DepAnyOf() {
 
 # Runs checks for required dependencies
 MissingDepCount=0; MissingDeps=''; Editor=''; Finder=''
-
 DepAllOf fd
-
 DepAnyOf nvim vim vi
-[ -z "$Use" ] && MissingDeps="$MissingDeps, vi | (n)vim" || Editor=$Use
-
+[ -z "$Use" ] && MissingDeps="$MissingDeps, vi | (n)vim"  || Editor=$Use
 DepAnyOf fzf fzy
-[ -z "$Use" ] && MissingDeps="$MissingDeps, fzf | fzy" || Finder=$Use
+[ -z "$Use" ] && MissingDeps="$MissingDeps, fzf | fzy"    || Finder=$Use
 
-[ $MissingDepCount -gt 0 ] \
-  && DependencyError=True SigHandler "${MissingDeps#, }"
+[ $MissingDepCount -gt 0 ] && DepErr=True SigHandler "${MissingDeps#, }"
 unset Dep Use MissingDeps MissingDepCount
 
 
 # Runs version checks for all dependencies
 # Version check for fd
   FdCleanV=`fd --version`; FdCleanV=${FdCleanV#fd }
-
   Sup=${FdCleanV#?.}; Sup=${Sup%.?}
   FdV=${FdCleanV%%.*}; FdV=$FdV$Sup; FdV=$FdV${FdCleanV##*.}
-
-  [ $FdV -lt 832 ]   && VersionWarning=True SigHandler fd $FdCleanV
+  [ $FdV -lt 832 ]   && VerWar=True SigHandler fd $FdCleanV
 
 # Version check for fuzzy finder
   if [ "$Finder" = fzf ]; then
@@ -209,15 +180,13 @@ unset Dep Use MissingDeps MissingDepCount
     Sup=${FzfCleanV#?.}; Sup=${Sup%.?}
     FzfV=${FzfCleanV%%.*}; FzfV=$FzfV$Sup
       FzfV=$FzfV${FzfCleanV##*.}
-
-    [ $FzfV -lt 0300 ] && VersionWarning=True SigHandler fzf $FzfCleanV
+    [ $FzfV -lt 0300 ] && VerWar=True SigHandler fzf $FzfCleanV
   else
     FzyCleanV=`fzy --version`; FzyCleanV=${FzyCleanV#fzy }
       FzyCleanV=${FzyCleanV% ©*}
     Sup=${FzyCleanV#?.}
     FzyV=${FzyCleanV%.?}$Sup
-
-    [ $FzyV -lt 10 ] && VersionWarning=True SigHandler fzy $FzyCleanV
+    [ $FzyV -lt 10 ] && VerWar=True SigHandler fzy $FzyCleanV
   fi
 
 unset FdCleanV FzfCleanV FzyCleanV FdV FzfV FzyV Sup
@@ -252,7 +221,7 @@ while [ -n "$1" ]; do
       if [ $2 -eq $2 ] 2>/dev/null && [ $2 -gt 0 ]; then
         Depth=$2
       else
-        DepthError=True SigHandler
+        DetErr=True SigHandler
       fi
       shift 2;;
 
@@ -261,7 +230,7 @@ while [ -n "$1" ]; do
         unset ExcludeFile
       else
         if [ ! -f "$2" ] || [ ! -r "$2" ]; then
-          ExcludeFileError=True SigHandler "$2"
+          ExlErr=True SigHandler "$2"
         fi
         ExcludeFile="$2"
       fi
@@ -289,7 +258,7 @@ while [ -n "$1" ]; do
       Err 1 "Invalid option '$1'";;
 
     *)
-      [ ! -d "$1" ] && DirError=True SigHandler "$1"
+      [ ! -d "$1" ] && DirErr=True SigHandler "$1"
       Dir="$1"
       shift;;
   esac
@@ -315,11 +284,7 @@ if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$ExcludeFile" ]; the
 fi
 
 
-if [ "$Finder" = fzf ]; then
-  FinderOpts="$FzfOpts"
-else
-  FinderOpts="$FzyOpts"
-fi
+[ "$Finder" = fzf ] && FinderOpts="$FzfOpts" || FinderOpts="$FzyOpts"
 unset FzfOpts FzyOpts
 
 
@@ -347,14 +312,14 @@ while [ -n "$ExpList" ]; do
 
   Exit=$?
   if [ "$Finder" = fzf ]; then
-    [ $Exit -eq 130 ] && Interrupt=True SigHandler
+    [ $Exit -eq 130 ] && SigInt=True SigHandler
   else
-    [ $Exit -eq 1 ]   && Interrupt=True SigHandler
+    [ $Exit -eq 1 ]   && SigInt=True SigHandler
   fi
   unset Exit
 
   [ -n "$Match" ] && Files="$Files$Match " \
-    || FileNotFoundWarning=True SigHandler ${ExpList%% / *}
+    || FnfWar=True SigHandler ${ExpList%% / *}
 
   [ "$ExpList" = "$Exp" ] && break
 
@@ -363,4 +328,4 @@ done; Files="${Files% }"
 
 
 # Open files in $Editor
-[ -n "$Files" ] && $Editor $Files || NoFile=True SigHandler
+[ -n "$Files" ] && $Editor $Files || FilErr=True SigHandler
