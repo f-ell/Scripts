@@ -314,21 +314,7 @@ my sub TargetProc($$$) {
   my $TargetReq = shift;
   my @Targets   = @ARGV; shift @Targets if @Targets and $Targets[0] eq '--';
 
-  # Verify sufficient number of targets present:
   local $_ = $Action;
-  undef $TargetReq if /^branch$/ and $Opts =~ /--list/;
-  undef $TargetReq if /^commit$/ and $Opts =~ /--amend/;
-  undef $TargetReq if /^merge$/  and $Opts =~ /--(abort|continue|quit)/;
-  if ($TargetReq) {
-    SigHandler('MvDErr')    if /^mv$/ and scalar @Targets == 1;
-    if (not @Targets) {
-      SigHandler('BranchErr') if /^branch|merge|switch$/;
-      SigHandler('URLErr')    if /^clone$/;
-      SigHandler('CommErr')   if /^revert$/;
-      SigHandler('FileErr');
-    }
-  }
-
   # Edge-case handling:
   if (/^clone$/ and local $_ = $Targets[0]) {
     unless (m{^(?:\.)?/}) {
@@ -346,6 +332,25 @@ my sub TargetProc($$$) {
       $Confirm = <STDIN>;
     }
     SigHandler('INT') if $Confirm =~ /^(?:n)?\n$/i;
+  }
+  elsif (/^switch$/ and not $Opts and not @Targets) {
+    @Targets = 'master';
+  }
+
+  # Verify sufficient number of targets present:
+  undef $TargetReq if /^branch$/ and $Opts =~ /--list/;
+  undef $TargetReq if /^commit$/ and $Opts =~ /--amend/;
+  undef $TargetReq if /^merge$/  and $Opts =~ /--(abort|continue|quit)/;
+  if ($TargetReq) {
+    SigHandler('MvDErr')    if /^mv$/ and scalar @Targets == 1;
+    if (not @Targets) {
+      # TODO: find a better way to handle specific errors:
+      SigHandler('CommErr')   if /^switch$/ and $Opts =~ /\Wd\W/;
+      SigHandler('BranchErr') if /^branch|merge|switch$/;
+      SigHandler('CommErr')   if /^revert$/;
+      SigHandler('URLErr')    if /^clone$/;
+      SigHandler('FileErr');
+    }
   }
 
   # Escape spaces:
@@ -455,10 +460,10 @@ if (local $_ = shift) {
   }
 
   unless ($NoProc) {
-    $Opts     = OptProc($Action, %Disp, %Prio, %Rstr, @Args) if @Args;
+    $Opts     = OptProc($Action, %Disp, %Prio, %Rstr, @Args) if not $Opts;
     @Targets  = TargetProc($Action, $Opts, $TargetReq);
   } else { $Opts = ''; @Targets = (); }
-}   else { Default(); }
+}   else { Default(); } # Got no arguments
 
 
 # Exception handling
