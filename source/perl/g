@@ -225,8 +225,8 @@ if (local $_ = $ARGV[0]) {
 # -----------------
 # Option processing
 # -----------------
-my $Action; my $Opts; my @Targets; my $NoProc;
-my %Disp = (); my %Prio = (); my %Rstr = (); my @Args;
+my $Action  = ''; my $Opts = ''; my @Targets  = (); my $NoProc;
+my %Disp    = (); my %Prio = (); my %Rstr     = (); my @Args;
 
 my sub Default() {
   $Action = 'status';
@@ -332,8 +332,9 @@ my sub TargetProc($$$) {
   # Edge-case handling:
   if (/^clone$/ and local $_ = $Targets[0]) {
     unless (m{^(?:\.)?/}) {
-      my $Schema = 'https://'    if m{^(?!http(?:s)?://)};
-      my $Host   = 'github.com'  if m{^%.*$};
+      my $Schema = ''; my $Host = '';
+      $Schema = 'https://'    if m{^(?!http(?:s)?://)};
+      $Host   = 'github.com'  if m{^%.*$};
       s/%/\//; $Targets[0] = $Schema.$Host.$_;
     }
   }
