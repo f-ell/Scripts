@@ -454,7 +454,7 @@ if (local $_ = shift) {
   }
 
   unless ($NoProc) {
-    $Opts     = OptProc($Action, %Disp, %Prio, %Rstr, @Args);
+    $Opts     = OptProc($Action, %Disp, %Prio, %Rstr, @Args) if @Args;
     @Targets  = TargetProc($Action, $Opts, $TargetReq);
   } else { $Opts = ''; @Targets = (); }
 }   else { Default(); }
