@@ -2,10 +2,11 @@
 use warnings; use strict; $\ = "\n";
 # Note: As of 28/09/2022, this script is, mostly, in maintenance mode.
 # Issue-tracker:
+# * git-remote rm doesn't allow '--' syntax % use dynamic opt - but like, why
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.1.4 - maintenance mode';
+my $Version   = '0.1.5 - maintenance mode';
 
 my sub Err {
   printf STDERR "Error: %s\n", $_[1];
@@ -20,6 +21,7 @@ my sub SigHandler {
   Err(  2, 'Nothing to debug!')           if /^DebugErr$/;
   Err(  2, 'Missing filename!')           if /^FileErr$/;
   Err(  2, 'Missing destination!')        if /^MvDErr$/;
+  Err(  2, 'Missing name!')               if /^NameErr$/;
   Err(  2, 'Missing URL!')                if /^URLErr$/;
   Err(  3, 'Not in a git repository!')    if /^RepoErr$/;
   Err(  4, 'Dependency not met - '.$_[0]) if /^DepErr$/;
@@ -58,7 +60,7 @@ my sub c {
       Optionally takes one or two commit messages, where '%%' acts as a sepa-
       rator between the two. The second commit message is passed as a submes-
       sage to git.
-      NOTE: double dashes in commit mesages will break parsing!\n";
+      NOTE: unquoted double dashes in commit mesages will break parsing!\n";
 }
 my sub d {
   return "    d [c] [COMMIT...] [-- FILE...]
@@ -81,7 +83,7 @@ my sub l {
         'l'   => --pretty=medium
         's'   => --pretty=oneline, default
         'n'   => --name-only
-        'INT' => -INT (default it '-4')\n";
+        'INT' => -INT (default is '-4')\n";
 }
 my sub _m {
   return "    m [acq] [-- BRANCH]
@@ -91,11 +93,11 @@ my sub _m {
         'q' => --quit\n";
 }
 my sub _s {
-  return "    s [ls] [c] [-- FILE...]
+  return "    s [ls] [a] [-- FILE...]
       Run 'git status' on the current repository, or on FILE... .
         'l' => --long
         's' => -s, default
-        'c' => --ahead-behind\n";
+        'a' => --ahead-behind\n";
 }
 my sub cl {
   return "    cl [INT] -- URL [DIR]
@@ -127,7 +129,7 @@ my sub rm {
   return "    rm [cn] [r] -- FILE...
       Run 'git rm' on FILE... .
         'c' => --cached, default
-        'n' => not --cached
+        'n' => \"not --cached\"
         'r' => -r\n";
 }
 my sub st {
@@ -144,10 +146,20 @@ my sub sw {
       Run 'git switch' on BRANCH or COMMIT.
         'd' => -d\n";
 }
+my sub rem {
+  return "    rem [arRsuv] [-- NAME]
+      Run 'git remote' on NAME.
+        'a' => add
+        'r' => rename
+        'R' => rm
+        's' => show
+        'u' => set-url
+        'v' => -v, default\n";
+}
 my sub res {
   return "    res [ns] -- FILE...
       Run 'git restore' on FILE... .
-        'n' => not --staged
+        'n' => \"not --staged\"
         's' => --staged, default\n";
 }
 my sub rev {
@@ -157,8 +169,9 @@ my sub rev {
         'n' => --no-edit\n";
 }
 
-my @Help =
-  (D, h, a, b, c, d, f, i, l, _m, _s, cl, mv, pl, ps, rm, st, sw, res, rev);
+my @Help = (
+  D, h, a, b, c, d, f, i, l, _m, _s, cl, mv, pl, ps, rm, st, sw, rem, res, rev
+);
 sub Help {
 print "NAME
     $Program - shorthands for git commands
@@ -173,7 +186,7 @@ DESCRIPTION
 
     $Program currently provides shorthands for the following commands:
     add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
-    rm, restore, revert, stash, status, switch
+    remote, restore, revert, rm, stash, status, switch
 
 OPTIONS";
 print foreach @Help;
@@ -198,7 +211,9 @@ AUTHOR(S)
 
 my $Debug     = ''; my $TargetOpt = ''; my $TargetReq = '';
 my @Optional  = ('d', 'i', 'l', 's', 'st');
-my @Requires  = ('a', 'b', 'c', 'm', 'cl', 'mv', 'rm', 'sw', 'res', 'rev');
+my @Requires  = (
+  'a', 'b', 'c', 'm', 'cl', 'mv', 'rm', 'sw', 'rem', 'res', 'rev'
+);
 
 
 # Preliminary checks
@@ -225,7 +240,7 @@ if (local $_ = $ARGV[0]) {
 # -----------------
 # Option processing
 # -----------------
-my $Action  = ''; my $Opts = ''; my @Targets  = (); my $NoProc;
+my $Action  = ''; my $Opts = ''; my @Targets  = (); # my $NoProc;
 my %Disp    = (); my %Prio = (); my %Rstr     = (); my @Args;
 
 my sub Default() {
@@ -283,7 +298,7 @@ my sub OptProc($\%\%\%\@) {
   my sub RstrRemove($) {
     my $K = shift;
     if (local $_ = $Rstr{$K}) {
-      my @Rstr = split('');
+      my @Rstr = split(':');
       delete $Disp{$_} foreach @Rstr;
     }
   }
@@ -292,6 +307,7 @@ my sub OptProc($\%\%\%\@) {
     if ($Disp{$_}) { # Processes static options
       $Opts .= $Disp{$_}.' ';
       delete $Disp{$_};
+      delete $Prio{$_} if $Prio{$_};
       RstrRemove($_);
     }
     else { # Processes dynamic option
@@ -341,14 +357,20 @@ my sub TargetProc($$$) {
   undef $TargetReq if /^branch$/ and $Opts =~ /--list/;
   undef $TargetReq if /^commit$/ and $Opts =~ /--amend/;
   undef $TargetReq if /^merge$/  and $Opts =~ /--(abort|continue|quit)/;
+  undef $TargetReq if /^remote$/ and $Opts =~ /-v/;
   if ($TargetReq) {
-    SigHandler('MvDErr')    if /^mv$/ and scalar @Targets == 1;
-    if (not @Targets) {
+    if (scalar @Targets == 1) {
+      SigHandler('MvDErr')  if /^mv$/;
+      SigHandler('URLErr')  if /^remote$/ and $Opts =~ /add/;
+      SigHandler('NameErr') if /^remote$/ and $Opts =~ /rename/;
+    }
+    elsif (not @Targets) {
       # TODO: find a better way to handle specific errors:
       SigHandler('CommErr')   if /^switch$/ and $Opts =~ /\Wd\W/;
       SigHandler('BranchErr') if /^branch|merge|switch$/;
-      SigHandler('CommErr')   if /^revert$/;
       SigHandler('URLErr')    if /^clone$/;
+      SigHandler('NameErr')   if /^remote$/;
+      SigHandler('CommErr')   if /^revert$/;
       SigHandler('FileErr');
     }
   }
@@ -367,9 +389,9 @@ if (local $_ = shift) {
   }
   elsif (/^b$/) {
     $Action = 'branch';
-    %Disp = (c => '-c',   d => '-d',  l => '--list',  m => '-m');
-    %Prio = (c => 1,      d => 1,     l => 2,         m => 1);
-    %Rstr = (c => 'dlm',  d => 'clm', l => 'cdm',     m => 'cdl');
+    %Disp = (c => '-c',     d => '-d',    l => '--list',  m => '-m');
+    %Prio = (c => 1,        d => 1,       l => 2,         m => 1);
+    %Rstr = (c => 'd:l:m',  d => 'c:l:m', l => 'c:d:m',   m => 'c:d:l');
   }
   elsif (/^c$/) {
     $Action = 'commit';
@@ -381,7 +403,7 @@ if (local $_ = shift) {
     %Disp = (c => '--cached', _1 => '');
     %Prio = (c => -1);
   }
-  elsif (/^f$/) { $NoProc = 'True'; $Action = 'fetch'; }
+  elsif (/^f$/) { $Action = 'fetch'; }
   elsif (/^l$/) {
     $Action = 'log';
     %Disp = (
@@ -400,12 +422,24 @@ if (local $_ = shift) {
     $Action = 'merge';
     %Disp = (a => '--abort',  c => '--continue',  q => '--quit');
     %Prio = (a => -1,         c => -2,            q => -2);
-    %Rstr = (a => 'cq',       c => 'aq',          q => 'ac');
+    %Rstr = (a => 'c:q',      c => 'a:q',         q => 'a:c');
+  }
+  elsif (/^rem$/) {
+    $Action = 'remote';
+    %Disp = (
+      a => 'add', r => 'rename', R => 'rm', s => 'show', u => 'set-url',
+      v => '-v'
+    );
+    %Prio = (a => 1, r => 1, R => 1, s => 1, u => 1, v => 2);
+    %Rstr = (
+      a => 'r:R:s:u:v', r => 'a:R:s:u:v', R => 'a:r:s:u:v', s => 'a:r:R:u:v',
+      u => 'a:r:R:s:v', v => 'a:r:R:s:u'
+    );
   }
   elsif (/^s$/) {
     $Action = 'status';
-    %Disp = (s => '-s', l => '--long',  c => '--ahead-behind');
-    %Prio = (s => 2,    l => 1,         c => -1);
+    %Disp = (s => '-s', l => '--long',  a => '--ahead-behind');
+    %Prio = (s => 2,    l => 1,         a => -1);
     %Rstr = (s => 'l',  l => 's');
   }
   elsif (/^cl$/) {
@@ -419,7 +453,7 @@ if (local $_ = shift) {
     %Prio = (n => 2,              r => 1);
     %Rstr = (n => 'r',            r => 'n');
   }
-  elsif (/^ps$/) { $NoProc = 'True'; $Action = 'push'; }
+  elsif (/^ps$/) { $Action = 'push'; }
   elsif (/^rm$/) {
     $Action = 'rm';
     %Disp = (c => '--cached', n => ' ', r => '-r');
@@ -431,8 +465,11 @@ if (local $_ = shift) {
     %Disp = (
       c => 'clear', l => 'list', o => 'pop', u => 'push', s => 'show'
     );
-    %Prio = (c => 1,      l => 2,      o => 1,      u => 1,      s => 1);
-    %Rstr = (c => 'lous', l => 'cuos', o => 'clus', u => 'clos', s => 'clou');
+    %Prio = (c => 1, l => 2, o => 1, u => 1, s => 1);
+    %Rstr = (
+      c => 'l:o:u:s',  l => 'c:u:o:s', o => 'c:l:u:s', u => 'c:l:o:s',
+      s => 'c:l:o:u'
+    );
   }
   elsif (/^sw$/) {
     $Action = 'switch';
@@ -459,10 +496,10 @@ if (local $_ = shift) {
     push(@Args, shift) until not @ARGV or $ARGV[0] eq '--';
   }
 
-  unless ($NoProc) {
+  # unless ($NoProc) {
     $Opts     = OptProc($Action, %Disp, %Prio, %Rstr, @Args) if not $Opts;
     @Targets  = TargetProc($Action, $Opts, $TargetReq);
-  } else { $Opts = ''; @Targets = (); }
+  # } else { $Opts = ''; @Targets = (); }
 }   else { Default(); } # Got no arguments
 
 
