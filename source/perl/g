@@ -6,7 +6,7 @@ use warnings; use strict; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.1.5 - maintenance mode';
+my $Version   = '0.1.6 - maintenance mode';
 
 my sub Err {
   printf STDERR "Error: %s\n", $_[1];
@@ -60,7 +60,7 @@ my sub c {
       Optionally takes one or two commit messages, where '%%' acts as a sepa-
       rator between the two. The second commit message is passed as a submes-
       sage to git.
-      NOTE: unquoted double dashes in commit mesages will break parsing!\n";
+      NOTE: Unquoted double dashes in commit mesages will break parsing!\n";
 }
 my sub d {
   return "    d [c] [COMMIT...] [-- FILE...]
@@ -188,6 +188,16 @@ DESCRIPTION
     add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
     remote, restore, revert, rm, stash, status, switch
 
+    $Program supports 'verbatim' strings - they are passed verbatim to Git and
+    can be used to access options that are not natively supported. They are use-
+    able in conjunction with $Program\'s builtin options.
+    A verbatim string is embedded by enclosing it in percent signs (%).
+    Omitting the second percent sign matches against EOL.
+
+    NOTE: No further validation is done to such strings; they may clash with
+    $Program\'s default options in some cases. Furthermore, when used alongside
+    a commit SUBmessage, embed the verbatim string BEFORE BOTH messages.
+
 OPTIONS";
 print foreach @Help;
 print "EXIT STATUS
@@ -223,9 +233,9 @@ my @Requires  = (
 
 # Help, Debug, Requires / Optional:
 if (local $_ = $ARGV[0]) {
-  if (/^(?:(-)?h|--help|-\?)$/) {
-    do { Help(); exit(0); }       if not $ARGV[1];
-    do { print $_[0]; exit(0); }  if local @_ = grep(/^\s*$ARGV[1]\W/, @Help);
+  if (/^(?:-)?h|--help|-\?$/) {
+    do { Help();    exit(0); }  if not $ARGV[1];
+    do { print $_;  exit(0); }  if local ($_) = grep(/^\s*$ARGV[1]\W/, @Help);
     SigHandler('HelpErr', $ARGV[1]);
   }
 
@@ -249,16 +259,18 @@ my sub Default() {
 }
 
 my sub OptProc($\%\%\%\@) {
-  my $Action  = shift; # action
-  my $Opts    = '';    # internal Optstring
-  my $rDisp   = shift; # dispatch table
-  my $rPrio   = shift; # priority hash
-  my $rRstr   = shift; # restrict hash
-  my $rArgs   = shift; # arguments
+  my $Action  = shift;  # action
+  my $Opts    = '';     # internal optstring
+  my $Verb    = '';     # verbatim optstring
+  my $rDisp   = shift;  # dispatch table
+  my $rPrio   = shift;  # priority hash
+  my $rRstr   = shift;  # restrict hash
+  my $rArgs   = shift;  # arguments
   my %Disp = %$rDisp; my %Prio = %$rPrio;
   my %Rstr = %$rRstr; my @Args = @$rArgs;
   undef $rDisp; undef $rPrio; undef $rRstr; undef $rArgs;
 
+  # Helper subroutines
   my sub DynProc($) {
     local $_ = shift;
     if ($Action eq 'clone' and $Disp{_1} eq '' and /^\d+$/) {
@@ -303,6 +315,14 @@ my sub OptProc($\%\%\%\@) {
     }
   }
 
+  # Actual processing
+  my $S = join(' ', @Args); $S =~ /(%(.+?)(?(?=%)%|$))/;
+  if ($2) {
+    $Verb = $2;
+    $S =~ s/$1//;
+    @Args = split(' ', $S);
+  }
+
   while (local $_ = shift @Args) {
     if ($Disp{$_}) { # Processes static options
       $Opts .= $Disp{$_}.' ';
@@ -321,7 +341,7 @@ my sub OptProc($\%\%\%\@) {
     RstrRemove($_);
     $Opts .= $Disp{$_}.' ';
   }
-  return $Opts;
+  return $Opts.' '.$Verb;
 }
 
 my sub TargetProc($$$) {
