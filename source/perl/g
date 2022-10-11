@@ -1,8 +1,12 @@
 #!/usr/bin/perl
 use warnings; use strict; $\ = "\n";
 # Note: As of 28/09/2022, this script is, mostly, in maintenance mode.
+# Features:
+# * signed commits with s / '-S'
+# * show signatures with s / '--show-signature' (git-log)
 # Issue-tracker:
 # * git-remote rm doesn't allow '--' syntax % use dynamic opt - but like, why
+# * lookaround for commit's %% and verbatim strings
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
@@ -195,8 +199,9 @@ DESCRIPTION
     Omitting the second percent sign matches against EOL.
 
     NOTE: No further validation is done to such strings; they may clash with
-    $Program\'s default options in some cases. Furthermore, when used alongside
-    a commit SUBmessage, embed the verbatim string BEFORE BOTH messages.
+    $Program\'s default options. When used alongside a commit message, embed the
+    string before, or after the message(s). Be wary when using a '%' inside of a
+    commit message, ideally embed the mes- sage itself as a verbatim string.
 
 OPTIONS";
 print foreach @Help;
@@ -316,7 +321,7 @@ my sub OptProc($\%\%\%\@) {
   }
 
   # Actual processing
-  my $S = join(' ', @Args); $S =~ /(%(.+?)(?(?=%)%|$))/;
+  my $S = join(' ', @Args); $S =~ /((?<!%)%(?!%)(.+?)(?(?=%)%|$))/;
   if ($2) {
     $Verb = $2;
     $S =~ s/$1//;
