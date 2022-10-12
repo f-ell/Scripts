@@ -4,7 +4,6 @@ use warnings; use strict; $\ = "\n";
 # Features:
 # * signed commits with s / '-S'
 # * show signatures with s / '--show-signature' (git-log)
-# * consider dropping all checks when running with D
 # Issue-tracker:
 # * git-remote rm doesn't allow '--' syntax % use dynamic opt - but like, why
 # * lookaround for commit's %% and verbatim strings
@@ -14,38 +13,24 @@ my ($Program) = $0 =~ m{^.*/(.+)$};
 my $Version   = '0.1.6 - maintenance mode';
 
 my sub Err {
-printf STDERR "Error: %s\n", $_[1];
-exit($_[0]) if $_[0] > 0;
+  printf STDERR "Error: %s\n", $_[1];
+  exit($_[0]) if $_[0] > 0;
 }
 my sub SigHandler {
-local $_ = shift;
-Err(  1, 'No help available - '.$_[0])  if /^HelpErr$/;
-Err(  1, 'Illegal argument - '.$_[0])   if /^ArgErr$/;
-Err(  2, 'Missing branch name!')        if /^BranchErr$/;
-Err(  2, 'Missing commit!')             if /^CommErr$/;
-Err(  2, 'Nothing to debug!')           if /^DebugErr$/;
-Err(  2, 'Missing filename!')           if /^FileErr$/;
-Err(  2, 'Missing destination!')        if /^MvDErr$/;
-Err(  2, 'Missing name!')               if /^NameErr$/;
-Err(  2, 'Missing URL!')                if /^URLErr$/;
-Err(  3, 'Not in a git repository!')    if /^RepoErr$/;
-Err(  4, 'Dependency not met - '.$_[0]) if /^DepErr$/;
-Err(130, 'Received interrupt!')         if /^INT|TERM$/;
+  local $_ = shift;
+  Err(  1, 'No help available - '.$_[0])  if /^HelpErr$/;
+  Err(  1, 'Illegal argument - '.$_[0])   if /^ArgErr$/;
+  Err(  2, 'Missing branch name!')        if /^BranchErr$/;
+  Err(  2, 'Missing commit!')             if /^CommErr$/;
+  Err(  2, 'Nothing to debug!')           if /^DebugErr$/;
+  Err(  2, 'Missing filename!')           if /^FileErr$/;
+  Err(  2, 'Missing destination!')        if /^MvDErr$/;
+  Err(  2, 'Missing name!')               if /^NameErr$/;
+  Err(  2, 'Missing URL!')                if /^URLErr$/;
+  Err(  3, 'Not in a git repository!')    if /^RepoErr$/;
+  Err(  4, 'Dependency not met - '.$_[0]) if /^DepErr$/;
+  Err(130, 'Received interrupt!')         if /^INT|TERM$/;
 } @SIG{'INT','TERM'} = (\&SigHandler) x 2;
-my sub TargetErrHandler($$) {
-  local $_  = shift;
-  my $O     = shift;
-  my $Err   = 'File';
-  if ((/^switch$/ and $O =~ /\Wd\W/) or /^revert$/) {
-    $Err = 'Comm';
-  }
-  elsif (/^branch|merge|switch$/) {
-    $Err = 'Branch';
-  }
-  elsif (/^clone$/)   { $Err = 'URL'; }
-  elsif (/^remote$/)  { $Err = 'Name'; }
-  SigHandler($Err.'Err');
-}
 
 my sub D {
   return "    D
@@ -371,20 +356,6 @@ my sub TargetProc($$$) {
   my @Targets   = @ARGV; shift @Targets if @Targets and $Targets[0] eq '--';
 
   local $_ = $Action;
-  # Verify sufficient number of targets present:
-  undef $TargetReq if /^branch$/ and $Opts =~ /--list/;
-  undef $TargetReq if /^commit$/ and $Opts =~ /--amend/;
-  undef $TargetReq if /^merge$/  and $Opts =~ /--(abort|continue|quit)/;
-  undef $TargetReq if /^remote$/ and $Opts =~ /-v/;
-  if ($TargetReq) {
-    if (scalar @Targets == 1) {
-      SigHandler('MvDErr')  if /^mv$/;
-      SigHandler('URLErr')  if /^remote$/ and $Opts =~ /add/;
-      SigHandler('NameErr') if /^remote$/ and $Opts =~ /rename/;
-    }
-    elsif (not @Targets) { TargetErrHandler($_, $Opts); }
-  }
-
   # Edge-case handling:
   if (/^clone$/ and local $_ = $Targets[0]) {
     unless (m{^(?:\.)?/}) {
@@ -405,6 +376,28 @@ my sub TargetProc($$$) {
   }
   elsif (/^switch$/ and not $Opts and not @Targets) {
     @Targets = 'master';
+  }
+
+  # Verify sufficient number of targets present:
+  undef $TargetReq if /^branch$/ and $Opts =~ /--list/;
+  undef $TargetReq if /^commit$/ and $Opts =~ /--amend/;
+  undef $TargetReq if /^merge$/  and $Opts =~ /--(abort|continue|quit)/;
+  undef $TargetReq if /^remote$/ and $Opts =~ /-v/;
+  if ($TargetReq) {
+    if (scalar @Targets == 1) {
+      SigHandler('MvDErr')  if /^mv$/;
+      SigHandler('URLErr')  if /^remote$/ and $Opts =~ /add/;
+      SigHandler('NameErr') if /^remote$/ and $Opts =~ /rename/;
+    }
+    elsif (not @Targets) {
+      # TODO: find a better way to handle specific errors:
+      SigHandler('CommErr')   if /^switch$/ and $Opts =~ /\Wd\W/;
+      SigHandler('BranchErr') if /^branch|merge|switch$/;
+      SigHandler('URLErr')    if /^clone$/;
+      SigHandler('NameErr')   if /^remote$/;
+      SigHandler('CommErr')   if /^revert$/;
+      SigHandler('FileErr');
+    }
   }
 
   # Escape spaces:
