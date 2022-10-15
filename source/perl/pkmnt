@@ -1,9 +1,11 @@
 #!/usr/bin/perl
 use strict; use warnings; $\ = "\n";
 
+# Feature:
+#   * implement -u|--uuid           (e help)
+#   * implement -f|--force-unmount  (e help)
 # Issue Tracker:
 #   * current option processing allows 's' and '-long'
-#   * ALWAYS UNMOUNT, even on failure, unless nounmount is given
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{/(.+)$};
@@ -12,43 +14,52 @@ my $Version   = '0.0.1';
 use constant DISKBYID   => '/dev/disk/by-id/';
 use constant PROCMOUNT  => '/proc/mounts';
 
-my sub Err {
-  print STDERR "Error: $_[1]";
-  if ($_[0] > 0) {
-    # cleanup
-    # TODO:
-    # * unmount if not mounted at start
-    # exit
-    exit($_[0]);
+
+my $C         = '';
+my $Dev       = '';
+my $Part      = 1;
+my $Mtime     = 0;
+my $Mnt       = 'f';
+my $MntPoint  = '';
+my $Umount    = 't';
+my $UsbOnly   = 'f';
+my $DbP    = 'db.kdbx';
+
+my %Opts = (
+  b => 'blockdev',  h => 'help', n => 'noumount',
+  p => 'partition', u => 'uuid'
+);
+my %RequiresArg = (
+  b => 'blockdev', p => 'partition', u => 'uuid'
+);
+
+
+my sub Clean {
+  if ($Dev and $Mnt eq 'f' and $Umount eq 't') {
+    `udisksctl unmount -b $Dev` or
+      print STDERR $Program.': improper termination - '.$Dev.' still mounted!';
   }
 }
+my sub Err {
+  print STDERR "$Program: $_[1]";
+  Clean()     if $C eq 't';
+  exit($_[0]) if $_[0] > 0;
+}
 my sub SigHandler { local $_ = shift;
-  Err(130, 'Caught interrupt.')                 if /^SigInt$/;
-  Err(1, 'Illegal argument - '.shift)           if /^ArgErr$/;
-  Err(1, 'Not enough arguments for '.shift)     if /^NumErr$/;
-  Err(1, 'Dependency not met - '.shift)         if /^DepErr$/; 
-  Err(2, 'Device doesn\'t exist - '.shift)      if /^DevErr$/;
-  Err(2, 'Can\'t close dirhandle for '.shift)   if /^DCErr$/;
-  Err(2, 'Can\'t open dirhandle for '.shift)    if /^DOErr$/;
-  Err(2, 'Can\'t close filehandle for '.shift)  if /^FCErr$/;
-  Err(2, 'Can\'t open filehandle for '.shift)   if /^FOErr$/;
-  Err(3, 'Device not connected.')               if /^DeviceErr$/;
-  Err(3, 'udisks2 mount failure.')              if /^UMErr$/;
-  Err(3, 'udisks2 unmount failure.')            if /^UUErr$/;
-  Err(4, 'Database not found - '.shift)         if /^DbFErr$/;
-  Err(4, 'Can\'t open database.')               if /^DbErr$/;
-} $SIG{INT} = sub { &SigHandler('SigInt'); };
-
-# OPTIONS:
-# -n | --no-unmount : don't unmount after script execution (0)
-# -d | --database : use PATH as db path - rel to mntpoint (./kp.kdbx?)
-#   * REQUIRED with subvols - circumvents normal processing
-# -p | --partition : use INT as partnumber (1)
-# {
-# -u | --uuid : use provided uuid
-# -b | --blockdev : use provided blockdev
-# otherwise: newest dev
-# }
+  Err(  1, 'illegal argument - '.shift)           if /^ArgErr$/;
+  Err(  1, 'not enough arguments for '.shift)     if /^NumErr$/;
+  Err(  2, shift.' doesn\'t exist.')              if /^DevErr$/;
+  Err(  2, 'udisks2 mount failure.')              if /^UMErr$/;
+  Err(  2, 'udisks2 unmount failure.')            if /^UUErr$/;
+  Err(  3, 'file ('.shift.') doesn\'t exist.')    if /^DbFErr$/;
+  Err(  3, 'fatal keepass failure.')              if /^KeeErr$/;
+  Err(  7, 'can\'t close dirhandle for '.shift)   if /^DCErr$/;
+  Err(  7, 'can\'t open dirhandle for '.shift)    if /^DOErr$/;
+  Err(  7, 'can\'t close filehandle for '.shift)  if /^FCErr$/;
+  Err(  7, 'can\'t open filehandle for '.shift)   if /^FOErr$/;
+  Err(  7, 'dependency not met - '.shift)         if /^DepErr$/; 
+  Err(130, 'caught interrupt.')                   if /^SigInt$/;
+} $SIG{INT} = sub { SigHandler('SigInt'); };
 
 my sub Help {
 print "NAME
@@ -58,8 +69,8 @@ SYNOPSIS
     $Program [OPTS] [-- PATH]
 
 DESCRIPTION
-    $Program can be used to quickly and conveniently access a keepass *.kdbx
-    database.
+    perl-keepass-mount ($Program) can be used to quickly and conveniently access
+    a keepass *.kdbx database.
     The disk the database resides on will be automounted in userspace via
     udisks2 if it's not mounted already. If the disk was not mounted initially,
     it will automatically be unmounted after keepass exits (unless n-flag is
@@ -75,6 +86,11 @@ OPTIONS
         recently mounted. DEV is assumed to reside in /dev.
         (also see -u)
 
+    -f | --force-unmount (TO BE IMPLEMENTED)
+        $Program usually doesn't unmount partitions that were already mounted
+        when the script is run. With this option, $Program will always try to
+        unmount the database partition.
+
     -h | --help
         Print this help information and exit.
 
@@ -89,15 +105,17 @@ OPTIONS
     -p | --partition INT
         Use INT as the partition number the database resides on.
 
-    -u | --uuid UUID (NOT IMPLEMENTED)
+    -u | --uuid UUID (TO BE IMPLEMENTED)
         Use UUID as the partition's uuid.
         (also see -b)
 
 EXIT STATUS
     0, on success
     1, on argument error
-    2, on
-    3, on
+    2, on mount error
+    3, on database|keepass error
+    7, on miscellaneous error
+  130, on keyboard interrupt
 
 DEPENDENCIES
     keepass (any)
@@ -124,23 +142,6 @@ foreach my $Dep (@Deps) {
 SigHandler('DepErr', join(', ', @MDeps)) if @MDeps;
 
 
-my $Dev       = '';
-my $Part      = 1;
-my $Mtime     = 0;
-my $Mnt       = 'False';
-my $MntPoint  = '';
-my $Umount    = 'True';
-my $UsbOnly   = 'False';
-my $DbPath    = 'db.kdbx';
-
-my %Opts = (
-  b => 'blockdev',  h => 'help', n => 'noumount',
-  p => 'partition', u => 'uuid'
-);
-my %RequiresArg = (
-  b => 'blockdev', p => 'partition', u => 'uuid'
-);
-
 # Switch parsing:
 while (local $_ = shift) {
   my $X = $_; s/-//g;
@@ -156,14 +157,13 @@ while (local $_ = shift) {
   elsif (/^b|blockdev$/) {
     local $_ = shift;
     SigHandler('ArgErr', $_) if not /^[a-z\d]+$/;
-    SigHandler('DevErr', $_) if not -b '/dev/'.$_;
     $Dev = $_;
   }
   elsif (/^n|nounmount$/) {
-    $Umount = 'False';
+    $Umount = 'f';
   }
   elsif (/^o|onlyusb$/) {
-    $UsbOnly = 'True';
+    $UsbOnly = 't';
   }
   elsif (/^p|partition$/) {
     local $_ = shift;
@@ -175,7 +175,7 @@ while (local $_ = shift) {
     SigHandler('ArgErr', $_) if not /^\d+$/;
   }
   elsif (/^$/) {
-    $DbPath = join(' ', @ARGV) if @ARGV; last;
+    $DbP = join(' ', @ARGV) if @ARGV; last;
   }
 }
 
@@ -188,7 +188,7 @@ unless ($Dev) {
 
   foreach (@_) {
     next if /-part\d+$/;
-    next if $UsbOnly eq 'True' and not /^usb-/;
+    next if $UsbOnly eq 't' and not /^usb-/;
     if ($Mtime < (lstat DISKBYID.$_)[9]) {
       (readlink DISKBYID.$_) =~ /([a-z0-9]*)$/;
       $Dev    = '/dev/'.$1.$Part;
@@ -200,6 +200,7 @@ unless ($Dev) {
 } else {
   $Dev = '/dev/'.$Dev.$Part;
 }
+SigHandler('DevErr', $Dev) if not -b $Dev;
 
 
 # Check mountpoint:
@@ -207,7 +208,7 @@ open(FH, '<', PROCMOUNT) or SigHandler('FOErr', PROCMOUNT);
 while (<FH>) {
   local @_ = split(' ');
   if ($_[0] eq $Dev) {
-    $Mnt      = 'True';
+    $Mnt      = 't';
     $MntPoint = $_[1];
   }
 }
@@ -215,22 +216,22 @@ close(FH) or SigHandler('FCErr', PROCMOUNT);
 
 
 # Mount partition if necessary:
-if ($Mnt eq 'True') {
+if ($Mnt eq 't') {
   print $Dev.' already mounted ('.$MntPoint.') - opening database.';
-  $Umount = 'False';
+  $Umount = 'f';
 }
 else {
   `udisksctl mount -b $Dev` =~ /^Mounted $Dev at (.*)$/ or SigHandler('UMErr');
   $MntPoint = $1;
+  $C = 't';
 }
 
 # Open database:
-$DbPath =~ s/^(?:\.)?\///; # TODO: consider removing - path set by user should be respected
-my $DbFile = $MntPoint.'/'.$DbPath;
--e $DbFile or SigHandler('DbFErr', $DbFile);
-`keepass $DbFile` or SigHandler('DbErr');
+my $DbF = $DbP;
+$DbF    = $MntPoint.'/'.$DbF if $DbP !~ /^(?:\.)?\//;
+-e $DbF or SigHandler('DbFErr', $DbF);
+`keepass $DbF`;
+$? == 0 or SigHandler('KeeErr');
 
 # Unmount partition:
-`udisksctl unmount -b $Dev` or SigHandler('UUErr') if $Umount eq 'True';
-
-print $Dev.' - '.$Mtime;
+`udisksctl unmount -b $Dev` or SigHandler('UUErr') if $Umount eq 't';
