@@ -9,26 +9,27 @@ use warnings; use strict; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.1.6 - maintenance mode';
+my $Version   = '0.1.7 - maintenance mode';
 
 my sub Err {
-printf STDERR "Error: %s\n", $_[1];
+printf STDERR "$Program: %s\n", $_[1];
 exit($_[0]) if $_[0] > 0;
 }
 my sub SigHandler {
 local $_ = shift;
-Err(  1, 'No help available - '.$_[0])  if /^HelpErr$/;
-Err(  1, 'Illegal argument - '.$_[0])   if /^ArgErr$/;
-Err(  2, 'Missing branch name!')        if /^BranchErr$/;
-Err(  2, 'Missing commit!')             if /^CommErr$/;
-Err(  2, 'Nothing to debug!')           if /^DebugErr$/;
-Err(  2, 'Missing filename!')           if /^FileErr$/;
-Err(  2, 'Missing destination!')        if /^MvDErr$/;
-Err(  2, 'Missing name!')               if /^NameErr$/;
-Err(  2, 'Missing URL!')                if /^URLErr$/;
-Err(  3, 'Not in a git repository!')    if /^RepoErr$/;
-Err(  4, 'Dependency not met - '.$_[0]) if /^DepErr$/;
-Err(130, 'Received interrupt!')         if /^INT|TERM$/;
+Err(  1, 'no help available - '.$_[0])  if /^HelpErr$/;
+Err(  1, 'illegal argument - '.$_[0])   if /^ArgErr$/;
+Err(  2, 'missing branch name.')        if /^BranchErr$/;
+Err(  2, 'missing commit.')             if /^CommErr$/;
+Err(  2, 'nothing to debug.')           if /^DebugErr$/;
+Err(  2, 'missing filename.')           if /^FileErr$/;
+Err(  2, 'missing destination.')        if /^MvDErr$/;
+Err(  2, 'missing name.')               if /^NameErr$/;
+Err(  2, 'missing tagname.')            if /^TagErr$/;
+Err(  2, 'missing URL.')                if /^URLErr$/;
+Err(  3, 'not in a git repository.')    if /^RepoErr$/;
+Err(  4, 'dependency not met - '.$_[0]) if /^DepErr$/;
+Err(130, 'caught interrupt.')           if /^INT|TERM$/;
 } @SIG{'INT','TERM'} = (\&SigHandler) x 2;
 my sub TargetErrHandler($$) {
   local $_  = shift;
@@ -42,24 +43,25 @@ my sub TargetErrHandler($$) {
   }
   elsif (/^clone$/)   { $Err = 'URL'; }
   elsif (/^remote$/)  { $Err = 'Name'; }
+  elsif (/^tag$/)     { $Err = 'Tag'; }
   SigHandler($Err.'Err');
 }
 
 my sub D {
   return "    D
       Run $Program in debug mode. Print relevant information to STDOUT, but
-      don't run the actual git command.\n";
+      don't run the actual git command.";
 }
 my sub h {
   return "    [-]h [OPT]
       Print help information and exit.
       When passed a valid option name as the first parameter, only print infor-
-      mation concerning that option. Subsequent parameters are discarded.\n";
+      mation concerning that option. Subsequent parameters are discarded.";
 }
 my sub a {
   return "    a [p] -- FILE...
       Run 'git add' on FILE... .
-        'p' => --patch\n";
+        'p' => --patch";
 }
 my sub b {
   return "    b [cdlm] [-- BRANCH...]
@@ -67,7 +69,7 @@ my sub b {
         'c' => -c
         'd' => -d
         'l' => --list, default
-        'm' => -m\n";
+        'm' => -m";
 }
 my sub c {
   return "    c [a] ['commit msg' [%% 'secondary commit msg']] -- FILE...
@@ -77,22 +79,22 @@ my sub c {
       Optionally takes one or two commit messages, where '%%' acts as a sepa-
       rator between the two. The second commit message is passed as a submes-
       sage to git.
-      NOTE: Unquoted double dashes in commit mesages will break parsing!\n";
+      NOTE: Unquoted double dashes in commit mesages will break parsing!";
 }
 my sub d {
   return "    d [c] [COMMIT...] [-- FILE...]
       Run 'git diff' on the repository, COMMIT... and/or FILE... .
-        'c' => --cached\n";
+        'c' => --cached";
 }
 my sub f {
   return "    f
-      Run 'git fetch' on the current repository.\n";
+      Run 'git fetch' on the current repository.";
 }
 my sub i {
   return "    i [b] [BRANCH] [-- DIR]
       Run 'git init' on the current directory or DIR.
         'b'      => --bare
-        'BRANCH' => -b BRANCH (default is '-b master')\n";
+        'BRANCH' => -b BRANCH (default is '-b master')";
 }
 my sub l {
   return "    l [ls] [n] [INT] [-- FILE...]
@@ -100,21 +102,31 @@ my sub l {
         'l'   => --pretty=medium
         's'   => --pretty=oneline, default
         'n'   => --name-only
-        'INT' => -INT (default is '-4')\n";
+        'INT' => -INT (default is '-4')";
 }
 my sub _m {
   return "    m [acq] [-- BRANCH]
       Run 'git merge' on BRANCH.
         'a' => --abort
         'c' => --continue
-        'q' => --quit\n";
+        'q' => --quit";
 }
 my sub _s {
   return "    s [ls] [a] [-- FILE...]
       Run 'git status' on the current repository, or on FILE... .
         'l' => --long
         's' => -s, default
-        'a' => --ahead-behind\n";
+        'a' => --ahead-behind";
+}
+my sub t {
+  return "    t [adls] [tag msg] -- TAG [OBJECT...]
+      Run 'git tag' with TAG as the tag's name on OBJECT.
+        'a' => -a
+        'd' => -d
+        'l' => -l, default
+        's' => -s
+
+      Optionally takes tag messages. The format is the same as for 'c'.";
 }
 my sub cl {
   return "    cl [INT] -- URL [DIR]
@@ -126,28 +138,34 @@ my sub cl {
       cloned with both relative and absolute URLs.
 
       '$Program cl -- [https://]github.com/user/repo | %user/repo'
-      will try to clone a repository at 'https://github.com/user/repo'\n";
+      will try to clone a repository at 'https://github.com/user/repo'";
 }
 my sub mv {
   return "    mv -- SOURCE... DEST
-      Run 'git mv' on SOURCE... DEST.\n";
+      Run 'git mv' on SOURCE... DEST.";
 }
 my sub pl {
   return "    pl [nr]
       Run 'git pull' on the current repository.
         'n' => --no-rebase, default
-        'r' => --rebase\n";
+        'r' => --rebase";
 }
 my sub ps {
   return "    ps
-      Run 'git push' on the current repository.\n";
+      Run 'git push' on the current repository.";
 }
 my sub rm {
   return "    rm [cn] [r] -- FILE...
       Run 'git rm' on FILE... .
         'c' => --cached, default
         'n' => \"not --cached\"
-        'r' => -r\n";
+        'r' => -r";
+}
+my sub sh {
+  return "    sh [ls] [-- OBJECT...]
+      Run 'git show --abbrev-commit' on OBJECT... .
+        'l' => --pretty=medium
+        's' => --pretty=oneline, default";
 }
 my sub st {
   return "    st [clous] [-- FILE...]
@@ -156,12 +174,12 @@ my sub st {
         'l' => list
         'o' => pop
         'u' => push
-        's' => show\n";
+        's' => show";
 }
 my sub sw {
   return "    sw [d] -- BRANCH|COMMIT
       Run 'git switch' on BRANCH or COMMIT.
-        'd' => -d\n";
+        'd' => -d";
 }
 my sub rem {
   return "    rem [arRsuv] [-- NAME]
@@ -171,23 +189,25 @@ my sub rem {
         'R' => rm
         's' => show
         'u' => set-url
-        'v' => -v, default\n";
+        'v' => -v, default";
 }
 my sub res {
   return "    res [ns] -- FILE...
       Run 'git restore' on FILE... .
         'n' => \"not --staged\"
-        's' => --staged, default\n";
+        's' => --staged, default";
 }
 my sub rev {
   return "    rev [en] -- COMMIT...
       Run 'git revert' on COMMIT... .
         'e' => -e, default
-        'n' => --no-edit\n";
+        'n' => --no-edit";
 }
 
 my @Help = (
-  D, h, a, b, c, d, f, i, l, _m, _s, cl, mv, pl, ps, rm, st, sw, rem, res, rev
+  D, h, a, b, c, d, f, i, l, _m, _s, t,
+  cl, mv, pl, ps, rm, sh, st, sw,
+  rem, res, rev
 );
 sub Help {
 print "NAME
@@ -203,7 +223,7 @@ DESCRIPTION
 
     $Program currently provides shorthands for the following commands:
     add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
-    remote, restore, revert, rm, stash, status, switch
+    remote, restore, revert, rm, show, stash, status, switch, tag
 
     $Program supports 'verbatim' strings - they are passed verbatim to Git and
     can be used to access options that are not natively supported. They are use-
@@ -238,9 +258,9 @@ AUTHOR(S)
 
 
 my $Debug     = ''; my $TargetOpt = ''; my $TargetReq = '';
-my @Optional  = ('d', 'i', 'l', 's', 'st');
+my @Optional  = ('d', 'i', 'l', 's', 'sh', 'st');
 my @Requires  = (
-  'a', 'b', 'c', 'm', 'cl', 'mv', 'rm', 'sw', 'rem', 'res', 'rev'
+  'a', 'b', 'c', 'm', 't', 'cl', 'mv', 'rm', 'sw', 'rem', 'res', 'rev'
 );
 
 
@@ -294,14 +314,14 @@ my sub OptProc($\%\%\%\@) {
     if ($Action eq 'clone' and $Disp{_1} eq '' and /^\d+$/) {
       return (1, '--depth '.$_) 
     }
-    if ($Action eq 'commit' and $Disp{_1} eq '') {
-      my $Msg1; my $Msg2;
+    if ($Action =~ /^commit|tag$/ and $Disp{_1} eq '') {
+      my ($M1, $M2);
       unshift(@Args, $_); s/"/\\"/g foreach @Args;
       join(' ', @Args) =~ /^(.*?)(?:\s+%%\s+(.*?))?$/;
-      $1 and $Msg1 = "-m \"$1\"" or $Msg1 = '';
-      $2 and $Msg2 = "-m \"$2\"" or $Msg2 = '';
+      $1 and $M1 = "-m \"$1\"" or $M1 = '';
+      $2 and $M2 = "-m \"$2\"" or $M2 = '';
       undef @Args;
-      return (1, $Msg1.' '.$Msg2);
+      return (1, $M1.' '.$M2);
     }
     if ($Action eq 'diff' and $Disp{_1} eq '') {
       unshift(@Args, $_); my $Commits = join(' ', @Args); undef @Args;
@@ -317,7 +337,7 @@ my sub OptProc($\%\%\%\@) {
 
   my sub PrioSort(\%) {
     my $Hash = shift;
-    $Prio{(%$Hash)[0]} = 0 if scalar %$Hash == 1 and scalar %Prio == 0;
+    $Prio{(%$Hash)[0]} = 0 if scalar %$Hash == 1 and scalar %Prio != 1;
     sort
     { $Prio{$a} = 9 if $a eq 'D';     $Prio{$b} = 9 if $b eq 'D';
       $Prio{$a} = 0 if not $Prio{$a}; $Prio{$b} = 0 if not $Prio{$b};
@@ -330,6 +350,8 @@ my sub OptProc($\%\%\%\@) {
     if (local $_ = $Rstr{$K}) {
       my @Rstr = split(':');
       delete $Disp{$_} foreach @Rstr;
+      # TODO: potential solution to dynamic priority issue
+      # foreach (@Rstr) { delete $Disp{$_}; delete $Prio{$_} if $Prio{$_}; }
     }
   }
 
@@ -374,6 +396,7 @@ my sub TargetProc($$$) {
   undef $TargetReq if /^commit$/ and $Opts =~ /--amend/;
   undef $TargetReq if /^merge$/  and $Opts =~ /--(abort|continue|quit)/;
   undef $TargetReq if /^remote$/ and $Opts =~ /-v/;
+  undef $TargetReq if /^tag$/    and $Opts =~ /-l/;
   if ($TargetReq) {
     if (scalar @Targets == 1) {
       SigHandler('MvDErr')  if /^mv$/;
@@ -454,23 +477,17 @@ if (local $_ = shift) {
     %Prio = (a => -1,         c => -2,            q => -2);
     %Rstr = (a => 'c:q',      c => 'a:q',         q => 'a:c');
   }
-  elsif (/^rem$/) {
-    $Action = 'remote';
-    %Disp = (
-      a => 'add', r => 'rename', R => 'rm', s => 'show', u => 'set-url',
-      v => '-v'
-    );
-    %Prio = (a => 1, r => 1, R => 1, s => 1, u => 1, v => 2);
-    %Rstr = (
-      a => 'r:R:s:u:v', r => 'a:R:s:u:v', R => 'a:r:s:u:v', s => 'a:r:R:u:v',
-      u => 'a:r:R:s:v', v => 'a:r:R:s:u'
-    );
-  }
   elsif (/^s$/) {
     $Action = 'status';
     %Disp = (s => '-s', l => '--long',  a => '--ahead-behind');
     %Prio = (s => 2,    l => 1,         a => -1);
     %Rstr = (s => 'l',  l => 's');
+  }
+  elsif (/^t$/) {
+    $Action = 'tag';
+    %Disp = (a => '-a',     d => '-d',    l => '-l',    s => '-s', _1 => '');
+    %Prio = (a => 1,        d => 1,       l => 2,       s => 1);
+    %Rstr = (a => 'd:l:s',  d => 'a:l:s', l => 'a:d:s', s => 'a:d:l');
   }
   elsif (/^cl$/) {
     $Action = 'clone';
@@ -490,6 +507,14 @@ if (local $_ = shift) {
     %Prio = (c => 2,          n => 1,   r => -1);
     %Rstr = (c => 'n',        n => 'c');
   }
+  elsif (/^sh$/) {
+    $Action = 'show';
+    %Disp = (
+      D => '--abbrev-commit', l => '--pretty=medium',  s => '--pretty=oneline'
+    );
+    %Prio = (l => 1,    s => 2);
+    %Rstr = (l => 's',  s => 'l');
+  }
   elsif (/^st$/) {
     $Action = 'stash';
     %Disp = (
@@ -505,6 +530,18 @@ if (local $_ = shift) {
     $Action = 'switch';
     %Disp = (d => '-d');
     %Prio = (d => -1);
+  }
+  elsif (/^rem$/) {
+    $Action = 'remote';
+    %Disp = (
+      a => 'add', r => 'rename', R => 'rm', s => 'show', u => 'set-url',
+      v => '-v'
+    );
+    %Prio = (a => 1, r => 1, R => 1, s => 1, u => 1, v => 2);
+    %Rstr = (
+      a => 'r:R:s:u:v', r => 'a:R:s:u:v', R => 'a:r:s:u:v', s => 'a:r:R:u:v',
+      u => 'a:r:R:s:v', v => 'a:r:R:s:u'
+    );
   }
   elsif (/^res$/) {
     $Action = 'restore';
