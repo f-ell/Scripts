@@ -2,14 +2,13 @@
 use strict; use warnings; $\ = "\n";
 
 # Feature:
-#   * implement -u|--uuid           (e help)
-#   * implement -f|--force-unmount  (e help)
+#   * implement -u|--uuid
 # Issue Tracker:
 #   * current option processing allows 's' and '-long'
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{/(.+)$};
-my $Version   = '0.0.1';
+my $Version   = '0.0.2';
 
 use constant DISKBYID   => '/dev/disk/by-id/';
 use constant PROCMOUNT  => '/proc/mounts';
@@ -21,7 +20,8 @@ my $Part      = 1;
 my $Mtime     = 0;
 my $Mnt       = 'f';
 my $MntPoint  = '';
-my $Umount    = 't';
+my $FMnt      = 'f';
+my $UMnt      = 't';
 my $UsbOnly   = 'f';
 my $DbP    = 'db.kdbx';
 
@@ -35,7 +35,7 @@ my %RequiresArg = (
 
 
 my sub Clean {
-  if ($Dev and $Mnt eq 'f' and $Umount eq 't') {
+  if ($Dev and (($Mnt eq 'f' and $UMnt eq 't') or $FMnt eq 't')) {
     `udisksctl unmount -b $Dev` or
       print STDERR $Program.': improper termination - '.$Dev.' still mounted!';
   }
@@ -86,10 +86,11 @@ OPTIONS
         recently mounted. DEV is assumed to reside in /dev.
         (also see -u)
 
-    -f | --force-unmount (TO BE IMPLEMENTED)
+    -f | --force-unmount
         $Program usually doesn't unmount partitions that were already mounted
         when the script is run. With this option, $Program will always try to
-        unmount the database partition.
+        unmount the partition holding the database.
+        (also see -n)
 
     -h | --help
         Print this help information and exit.
@@ -97,6 +98,7 @@ OPTIONS
     -n | --no-unmount
         Don't unmount partition after keepass exits, even if not mounted
         initially.
+        (also see -f)
 
     -o | --only-usb
         Only consider devices beginning with 'usb-' when auto-detecting device
@@ -159,8 +161,11 @@ while (local $_ = shift) {
     SigHandler('ArgErr', $_) if not /^[a-z\d]+$/;
     $Dev = $_;
   }
+  elsif (/^f|forceunmount$/) {
+    $FMnt = 't';
+  }
   elsif (/^n|nounmount$/) {
-    $Umount = 'f';
+    $UMnt = 'f';
   }
   elsif (/^o|onlyusb$/) {
     $UsbOnly = 't';
@@ -218,7 +223,7 @@ close(FH) or SigHandler('FCErr', PROCMOUNT);
 # Mount partition if necessary:
 if ($Mnt eq 't') {
   print $Dev.' already mounted ('.$MntPoint.') - opening database.';
-  $Umount = 'f';
+  $UMnt = 'f';
 }
 else {
   `udisksctl mount -b $Dev` =~ /^Mounted $Dev at (.*)$/ or SigHandler('UMErr');
@@ -234,4 +239,4 @@ $DbF    = $MntPoint.'/'.$DbF if $DbP !~ /^(?:\.)?\//;
 $? == 0 or SigHandler('KeeErr');
 
 # Unmount partition:
-`udisksctl unmount -b $Dev` or SigHandler('UUErr') if $Umount eq 't';
+`udisksctl unmount -b $Dev` or SigHandler('UUErr') if $FMnt eq 't' or $UMnt eq 't';
