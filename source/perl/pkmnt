@@ -7,7 +7,7 @@ use strict; use warnings; $\ = "\n";
 #   * current option processing allows 's' and '-long'
 
 my $Author    = 'Nico Pareigis';
-my ($Program) = $0 =~ m{/(.+)$};
+my ($Program) = $0 =~ m{^.*/(.+)$};
 my $Version   = '0.0.2';
 
 use constant DISKBYID   => '/dev/disk/by-id/';

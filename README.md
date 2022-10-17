@@ -9,9 +9,11 @@ Currently includes some redundant scripts (e.g. Shell and Perl version of
 #### Noteworthy Scripts
 * [`g`](https://gitlab.com/fell_/Scripts/-/blob/master/source/perl/g)
 \- Compact syntax for frequently used git commands
-* [`keemount`](https://gitlab.com/fell_/Scripts/-/blob/master/source/perl/keemount)
-\- Mount drive using UUID and open KeePass kxdb-database
-  * in development, not particularly feature-rich yet
+* [`pkmnt`](https://gitlab.com/fell_/Scripts/-/blob/master/source/perl/pkmnt)
+\- perl-keepass-mount
+  * auto-mount partition and open Keepass database
+  * automatic unmounting when script exits
+  * uses newest connected filesystem by default
 * [`nff`](https://gitlab.com/fell_/Scripts/-/tree/master/source/shell/nff)
 \- (Neo)Vim Fuzzy Finder
   * automatically open one or more files in (Neo)Vim, each file in its own
