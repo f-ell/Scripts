@@ -1,11 +1,13 @@
 #!/usr/bin/perl
 use warnings; use strict; $\ = "\n";
 # Note: As of 28/09/2022, this script is, mostly, in maintenance mode.
+
 # Features:
 # * consider dropping all checks when running with D
 # * git-commit -S | git-log --show-signature
 # Issue-tracker:
 # * git-remote rm doesn't allow '--' syntax % use dynamic opt - but like, why
+#   * neither does git-show apparently… gotta love the consistency
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
@@ -30,7 +32,7 @@ Err(  2, 'missing URL.')                if /^URLErr$/;
 Err(  3, 'not in a git repository.')    if /^RepoErr$/;
 Err(  4, 'dependency not met - '.$_[0]) if /^DepErr$/;
 Err(130, 'caught interrupt.')           if /^INT|TERM$/;
-} @SIG{'INT','TERM'} = (\&SigHandler) x 2;
+}
 my sub TargetErrHandler($$) {
   local $_  = shift;
   my $O     = shift;
@@ -46,6 +48,7 @@ my sub TargetErrHandler($$) {
   elsif (/^tag$/)     { $Err = 'Tag'; }
   SigHandler($Err.'Err');
 }
+@SIG{'INT','TERM'} = (\&SigHandler) x 2;
 
 my sub D {
   return "    D
@@ -209,12 +212,12 @@ my @Help = (
   cl, mv, pl, ps, rm, sh, st, sw,
   rem, res, rev
 );
-sub Help {
+my sub Help {
 print "NAME
     $Program - shorthands for git commands
 
 SYNOPSIS
-    $Program [D] [OPT [SUBOPTS]] [-- BRANCH|COMMIT...|FILE...|URL]
+    $Program [D] [OPT [SUBOPTS]] [-- BRANCH|COMMIT|NAME|FILE|OBJECT|TAG|URL]
 
 DESCRIPTION
     $Program aims to provide some useful shorthands for basic git operations. It
@@ -229,12 +232,13 @@ DESCRIPTION
     can be used to access options that are not natively supported. They are use-
     able in conjunction with $Program\'s builtin options.
     A verbatim string is embedded by enclosing it in percent signs (%).
-    Omitting the second percent sign matches against EOL.
+    Omitting the second percent sign matches against '--' / EOL.
 
-    NOTE: No further validation is done to such strings; they may clash with
-    $Program\'s default options. When used alongside a commit message, embed the
-    string before, or after the message(s). Be wary when using a '%' inside of a
-    commit message, ideally embed the mes- sage itself as a verbatim string.
+    NOTE: Verbatim strings are not validated any further; they may clash with
+    $Program\'s default options. When used alongside a commit message, try to
+    embed the string before, or after the message(s). Be wary when using a '%'
+    inside of a commit message, ideally embed the message itself as a verbatim
+    string.
 
 OPTIONS";
 print foreach @Help;
@@ -244,7 +248,7 @@ print "EXIT STATUS
     2, when missing filename or similar
     3, when trying to run outside of a git repository
     4, on dependency error
-  130, on user action
+  130, on keyboard interrupt
 
 DEPENDENCIES
     git
@@ -288,7 +292,7 @@ if (local $_ = $ARGV[0]) {
 # -----------------
 # Option processing
 # -----------------
-my $Action  = ''; my $Opts = ''; my @Targets  = (); # my $NoProc;
+my $Action  = ''; my $Opts = ''; my @Targets  = ();
 my %Disp    = (); my %Prio = (); my %Rstr     = (); my @Args;
 
 my sub Default() {
@@ -563,11 +567,9 @@ if (local $_ = shift) {
     push(@Args, shift) until not @ARGV or $ARGV[0] eq '--';
   }
 
-  # unless ($NoProc) {
-    $Opts     = OptProc($Action, %Disp, %Prio, %Rstr, @Args) if not $Opts;
-    @Targets  = TargetProc($Action, $Opts, $TargetReq);
-  # } else { $Opts = ''; @Targets = (); }
-}   else { Default(); } # Got no arguments
+  $Opts     = OptProc($Action, %Disp, %Prio, %Rstr, @Args) if not $Opts;
+  @Targets  = TargetProc($Action, $Opts, $TargetReq);
+} else { Default(); } # Got no arguments
 
 
 # Exception handling
