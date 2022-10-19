@@ -8,26 +8,27 @@ use strict; use warnings; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.0.2';
+my $Version   = '0.0.3';
 
 use constant DISKBYID   => '/dev/disk/by-id/';
 use constant PROCMOUNT  => '/proc/mounts';
+use constant CONFHOME   => $ENV{XDG_CONFIG_HOME}.'/';
 
 
 my $C         = '';
 my $Dev       = '';
 my $Part      = 1;
-my $Mtime     = 0;
+my $MTime     = 0;
 my $Mnt       = 'f';
 my $MntPoint  = '';
 my $FMnt      = 'f';
 my $UMnt      = 't';
 my $UsbOnly   = 'f';
-my $DbP    = 'db.kdbx';
+my $DbF       = '';
 
 my %Opts = (
-  b => 'blockdev',  h => 'help', n => 'noumount',
-  p => 'partition', u => 'uuid'
+  b => 'blockdev', f => 'forceunmount', h => 'help',
+  n => 'noumount', p => 'partition',    u => 'uuid'
 );
 my %RequiresArg = (
   b => 'blockdev', p => 'partition', u => 'uuid'
@@ -51,8 +52,9 @@ my sub SigHandler { local $_ = shift;
   Err(  2, shift.' doesn\'t exist.')              if /^DevErr$/;
   Err(  2, 'udisks2 mount failure.')              if /^UMErr$/;
   Err(  2, 'udisks2 unmount failure.')            if /^UUErr$/;
+  Err(  3, 'no valid database found.')            if /^DbEErr$/;
   Err(  3, 'file ('.shift.') doesn\'t exist.')    if /^DbFErr$/;
-  Err(  3, 'fatal keepass failure.')              if /^KeeErr$/;
+  Err(  3, 'keepass fatal.')                      if /^KeeErr$/;
   Err(  7, 'can\'t close dirhandle for '.shift)   if /^DCErr$/;
   Err(  7, 'can\'t open dirhandle for '.shift)    if /^DOErr$/;
   Err(  7, 'can\'t close filehandle for '.shift)  if /^FCErr$/;
@@ -63,53 +65,57 @@ my sub SigHandler { local $_ = shift;
 
 my sub Help {
 print "NAME
-    $Program - mount partition -> open keepass database -> unmount partition
+    $Program - mount partition -> open KeePass database -> unmount partition
 
 SYNOPSIS
     $Program [OPTS] [-- PATH]
 
 DESCRIPTION
     perl-keepass-mount ($Program) can be used to quickly and conveniently access
-    a keepass *.kdbx database.
-    The disk the database resides on will be automounted in userspace via
-    udisks2 if it's not mounted already. If the disk was not mounted initially,
-    it will automatically be unmounted after keepass exits (unless n-flag is
-    passed).
+    a KeePass database.
+    Unless already mounted, the partition the database resides on will be auto-
+    mounted in userspace via udisks2. If the disk was not mounted initially,
+    it will automatically be unmounted after KeePass exits (see -n and -f flags).
 
-    PATH may be used to specify a database path RELATIVE to the partition's
-    mount point. If not used, the database is assumed to reside directly below
-    the partition's mount point.
+    PATH may be used to specify a relative or absolute database path in the
+    host filesystem, OR a path relative to the partition's mount point. For the
+    latter, do NOT use leading path separators.
+
+    If PATH is omitted, $Program will try to iteratively match the <LastUsedFile>-
+    <Path>-value in \$XDG_CONFIG_HOME/KeePass/KeePass.config.xml to a file be-
+    neath the mount point. As a last resort, it will look for any *.kdbx files
+    directly below the mount point and settle for the first one.
 
 OPTIONS
-    -b | --blockdev DEV
-        Use DEV as the block device to mount, instead of the one that was most
-        recently mounted. DEV is assumed to reside in /dev.
-        (also see -u)
+  -b | --blockdev DEV
+      Use DEV as the block device to mount, instead of the one that was most
+      recently mounted. DEV is assumed to reside in /dev.
+      (also see -u)
 
-    -f | --force-unmount
-        $Program usually doesn't unmount partitions that were already mounted
-        when the script is run. With this option, $Program will always try to
-        unmount the partition holding the database.
-        (also see -n)
+  -f | --force-unmount
+      $Program usually doesn't unmount partitions that were already mounted
+      when the script is run. With this option, $Program will always try to
+      unmount the partition holding the database.
+      (also see -n)
 
-    -h | --help
-        Print this help information and exit.
+  -h | --help
+      Print this help information and exit.
 
-    -n | --no-unmount
-        Don't unmount partition after keepass exits, even if not mounted
-        initially.
-        (also see -f)
+  -n | --no-unmount
+      Don't unmount partition after KeePass exits, even if not mounted
+      initially.
+      (also see -f)
 
-    -o | --only-usb
-        Only consider devices beginning with 'usb-' when auto-detecting device
-        and partition.
+  -o | --only-usb
+      Only consider devices beginning with 'usb-' when auto-detecting device
+      and partition.
 
-    -p | --partition INT
-        Use INT as the partition number the database resides on.
+  -p | --partition INT
+      Use INT as the partition number the database resides on.
 
-    -u | --uuid UUID (TO BE IMPLEMENTED)
-        Use UUID as the partition's uuid.
-        (also see -b)
+  -u | --uuid UUID (TO BE IMPLEMENTED)
+      Use UUID as the partition's uuid.
+      (also see -b)
 
 EXIT STATUS
     0, on success
@@ -120,14 +126,14 @@ EXIT STATUS
   130, on keyboard interrupt
 
 DEPENDENCIES
-    keepass (any)
-    udisks2 (tested with v.2.9.4-1)
+  keepass (any)
+  udisks2 (tested with v.2.9.4-1)
 
 VERSION
-    $Version
+  $Version
 
 AUTHOR
-    $Author"; exit(0);
+  $Author"; exit(0);
 }
 
 
@@ -137,7 +143,7 @@ foreach my $Dep (@Deps) {
   my $Installed;
   foreach my $Dir (split(':', $ENV{PATH})) {
     $Dir .= '/' if $Dir !~ /\/$/;
-    -f $Dir.$Dep and do {$Installed = 1; last};
+    -f $Dir.$Dep and do { $Installed = 1; last; };
   }
   push(@MDeps, $Dep) unless $Installed;
 }
@@ -180,26 +186,25 @@ while (local $_ = shift) {
     SigHandler('ArgErr', $_) if not /^\d+$/;
   }
   elsif (/^$/) {
-    $DbP = join(' ', @ARGV) if @ARGV; last;
+    $DbF = join(' ', @ARGV) if @ARGV; last;
   }
 }
 
 
 unless ($Dev) {
-  # Get newest connected disk and relevant partition:
+# Get newest connected disk and relevant partition:
   opendir(DH, DISKBYID) or SigHandler('DOErr', DISKBYID);
-  local @_ = readdir DH; splice(@_, 0, 2);
+    local @_ = readdir DH; splice(@_, 0, 2);
   closedir(DH) or die SigHandler('DCErr', DISKBYID);
 
   foreach (@_) {
-    next if /-part\d+$/;
-    next if $UsbOnly eq 't' and not /^usb-/;
-    if ($Mtime < (lstat DISKBYID.$_)[9]) {
+    next if /-part\d+$/ or ($UsbOnly eq 't' and not /^usb-/);
+    if ($MTime < (lstat DISKBYID.$_)[9]) {
       (readlink DISKBYID.$_) =~ /([a-z0-9]*)$/;
       $Dev    = '/dev/'.$1.$Part;
-      $Mtime  = (stat _)[9];
+      $MTime  = (stat _)[9];
       # Speed up processing with large number of devices:
-      last if time - $Mtime < 10;
+      last if time - $MTime < 10;
     }
   }
 } else {
@@ -210,15 +215,14 @@ SigHandler('DevErr', $Dev) if not -b $Dev;
 
 # Check mountpoint:
 open(FH, '<', PROCMOUNT) or SigHandler('FOErr', PROCMOUNT);
-while (<FH>) {
-  local @_ = split(' ');
-  if ($_[0] eq $Dev) {
-    $Mnt      = 't';
-    $MntPoint = $_[1];
+  while (<FH>) {
+    local @_ = split(' ');
+    if ($_[0] eq $Dev) {
+      $Mnt      = 't';
+      $MntPoint = $_[1];
+    }
   }
-}
 close(FH) or SigHandler('FCErr', PROCMOUNT);
-
 
 # Mount partition if necessary:
 if ($Mnt eq 't') {
@@ -231,12 +235,56 @@ else {
   $C = 't';
 }
 
+
+# Try to find database:
+local $_;
+CONFHOME and $_ = CONFHOME or $_ = $ENV{HOME}.'/.config/';
+my $KpConf = $_.'KeePass/KeePass.config.xml';
+
+if ($DbF) { # Got '-- PATH'
+  $DbF = $MntPoint.'/'.$DbF   if $DbF !~ /^(?:\.)\//;
+
+  # Throw error when passed non-existant path:
+  SigHandler('DbFErr', $DbF)  if not -e $DbF;
+}
+else {      # Didn't get '-- PATH'
+  undef local $/;
+  my $Content = '';
+
+  # Try KeePass.config.xml's <LastUsedFile>:
+  if (-f $KpConf) {
+    open(FH, '<', $KpConf) or SigHandler('FOErr', $KpConf);
+      $Content = <FH>;
+    close(FH) or SigHandler('FCErr', $KpConf);
+  }
+  $Content =~ /<LastUsedFile>\n\s*<Path>(?:\.*\/)*(.*?)<\/Path>/; undef $Content;
+
+  # Iteratively try to match partial filename to existing database:
+  if ($1) {
+    local @_  = split('/', $1);
+    my $Try   = '';
+    foreach (reverse @_) {
+      $Try = '/'.$_.$Try;
+      -f $MntPoint.$Try and do { $DbF = $MntPoint.$Try; last; };
+    }
+  }
+
+  # Try '$MntPoint/*.kdbx':
+  if (not $DbF) {
+    opendir(DH, $MntPoint) or SigHandler('DOErr', $MntPoint);
+      local @_ = readdir DH;
+    closedir(DH) or SigHandler('DCErr', $MntPoint);
+    do { /^.*\.kdbx$/ and $DbF = $MntPoint.$_; last; } foreach @_;
+  }
+}
+SigHandler('DbEErr') if not $DbF;
+
+
 # Open database:
-my $DbF = $DbP;
-$DbF    = $MntPoint.'/'.$DbF if $DbP !~ /^(?:\.)?\//;
--e $DbF or SigHandler('DbFErr', $DbF);
 `keepass $DbF`;
 $? == 0 or SigHandler('KeeErr');
 
 # Unmount partition:
-`udisksctl unmount -b $Dev` or SigHandler('UUErr') if $FMnt eq 't' or $UMnt eq 't';
+if ($FMnt eq 't' or $UMnt eq 't') {
+  `udisksctl unmount -b $Dev` or SigHandler('UUErr')
+}
