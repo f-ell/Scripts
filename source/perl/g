@@ -122,11 +122,12 @@ my sub _s {
         'a' => --ahead-behind";
 }
 my sub t {
-  return "    t [adls] [tag msg] -- TAG [OBJECT...]
+  return "    t [adlns] [tag msg] -- TAG [OBJECT...]
       Run 'git tag' with TAG as the tag's name on OBJECT.
         'a' => -a
         'd' => -d
         'l' => -l, default
+        'n' => -n
         's' => -s
 
       Optionally takes tag messages. The format is the same as for 'c'.";
@@ -400,7 +401,7 @@ my sub TargetProc($$$) {
   undef $TargetReq if /^commit$/ and $Opts =~ /--amend/;
   undef $TargetReq if /^merge$/  and $Opts =~ /--(abort|continue|quit)/;
   undef $TargetReq if /^remote$/ and $Opts =~ /-v/;
-  undef $TargetReq if /^tag$/    and $Opts =~ /-l/;
+  undef $TargetReq if /^tag$/    and $Opts =~ /-l|-n/;
   if ($TargetReq) {
     if (scalar @Targets == 1) {
       SigHandler('MvDErr')  if /^mv$/;
@@ -489,9 +490,14 @@ if (local $_ = shift) {
   }
   elsif (/^t$/) {
     $Action = 'tag';
-    %Disp = (a => '-a',     d => '-d',    l => '-l',    s => '-s', _1 => '');
-    %Prio = (a => 1,        d => 1,       l => 2,       s => 1);
-    %Rstr = (a => 'd:l:s',  d => 'a:l:s', l => 'a:d:s', s => 'a:d:l');
+    %Disp = (
+      a => '-a', d => '-d', l => '-l', n => '-n', s => '-s', _1 => ''
+    );
+    %Prio = (a => 1, d => 1, l => 2, n => 1, s => 1);
+    %Rstr = (
+      a => 'd:l:n:s', d => 'a:l:n:s', l => 'a:d:n:s', n => 'a:d:l:s',
+      s => 'a:d:l:n'
+    );
   }
   elsif (/^cl$/) {
     $Action = 'clone';
