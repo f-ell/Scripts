@@ -7,7 +7,6 @@ use warnings; use strict; $\ = "\n";
 # * git-commit -S | git-log --show-signature
 # Issue-tracker:
 # * git-remote rm doesn't allow '--' syntax % use dynamic opt - but like, why
-#   * neither does git-show apparently… gotta love the consistency
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
@@ -328,7 +327,7 @@ my sub OptProc($\%\%\%\@) {
       undef @Args;
       return (1, $M1.' '.$M2);
     }
-    if ($Action eq 'diff' and $Disp{_1} eq '') {
+    if ($Action =~ /^diff|show$/ and $Disp{_1} eq '') {
       unshift(@Args, $_); my $Commits = join(' ', @Args); undef @Args;
       return(1, $Commits);
     }
@@ -520,7 +519,8 @@ if (local $_ = shift) {
   elsif (/^sh$/) {
     $Action = 'show';
     %Disp = (
-      D => '--abbrev-commit', l => '--pretty=medium',  s => '--pretty=oneline'
+      D => '--abbrev-commit', l => '--pretty=medium',  s => '--pretty=oneline',
+       _1 => ''
     );
     %Prio = (l => 1,    s => 2);
     %Rstr = (l => 's',  s => 'l');
