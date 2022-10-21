@@ -99,12 +99,12 @@ my sub i {
         'BRANCH' => -b BRANCH (default is '-b master')";
 }
 my sub l {
-  return "    l [ls] [n] [INT] [-- FILE...]
+  return "    l [ls] [n] [INT|a] [-- FILE...]
       Run 'git log --abbrev-commit' on the current repository, or on FILE... .
         'l'   => --pretty=medium
         's'   => --pretty=oneline, default
         'n'   => --name-only
-        'INT' => -INT (default is '-4')";
+        'INT' => -INT (default is '-4', 'a' unsets this)";
 }
 my sub _m {
   return "    m [acq] [-- BRANCH]
@@ -334,7 +334,10 @@ my sub OptProc($\%\%\%\@) {
     if ($Action eq 'init' and $Disp{_1} eq '-b master') {
       return (1, '-b '.$_);
     }
-    return (1, '-'.$_) if $Action eq 'log' and $Disp{_1} eq '-4' and /^\d+$/;
+    if ($Action eq 'log' and $Disp{_1} eq '-4') {
+      return (1, ' ')     if /^a$/;
+      return (1, '-'.$_)  if /^\d+$/;
+    }
 
     return undef;
   }
