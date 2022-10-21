@@ -13,24 +13,24 @@ my ($Program) = $0 =~ m{^.*/(.+)$};
 my $Version   = '0.1.7 - maintenance mode';
 
 my sub Err {
-printf STDERR "$Program: %s\n", $_[1];
-exit($_[0]) if $_[0] > 0;
+  printf STDERR "$Program: %s\n", $_[1];
+  exit($_[0]) if $_[0] > 0;
 }
 my sub SigHandler {
-local $_ = shift;
-Err(  1, 'no help available - '.$_[0])  if /^HelpErr$/;
-Err(  1, 'illegal argument - '.$_[0])   if /^ArgErr$/;
-Err(  2, 'missing branch name.')        if /^BranchErr$/;
-Err(  2, 'missing commit.')             if /^CommErr$/;
-Err(  2, 'nothing to debug.')           if /^DebugErr$/;
-Err(  2, 'missing filename.')           if /^FileErr$/;
-Err(  2, 'missing destination.')        if /^MvDErr$/;
-Err(  2, 'missing name.')               if /^NameErr$/;
-Err(  2, 'missing tagname.')            if /^TagErr$/;
-Err(  2, 'missing URL.')                if /^URLErr$/;
-Err(  3, 'not in a git repository.')    if /^RepoErr$/;
-Err(  4, 'dependency not met - '.$_[0]) if /^DepErr$/;
-Err(130, 'caught interrupt.')           if /^INT|TERM$/;
+  local $_ = shift;
+  Err(  1, 'no help available - '.$_[0])  if /^HelpErr$/;
+  Err(  1, 'illegal argument - '.$_[0])   if /^ArgErr$/;
+  Err(  2, 'missing branch name.')        if /^BranchErr$/;
+  Err(  2, 'missing commit.')             if /^CommErr$/;
+  Err(  2, 'nothing to debug.')           if /^DebugErr$/;
+  Err(  2, 'missing filename.')           if /^FileErr$/;
+  Err(  2, 'missing destination.')        if /^MvDErr$/;
+  Err(  2, 'missing name.')               if /^NameErr$/;
+  Err(  2, 'missing tagname.')            if /^TagErr$/;
+  Err(  2, 'missing URL.')                if /^URLErr$/;
+  Err(  3, 'not in a git repository.')    if /^RepoErr$/;
+  Err(  4, 'dependency not met - '.$_[0]) if /^DepErr$/;
+  Err(130, 'caught interrupt.')           if /^INT|TERM$/;
 }
 my sub TargetErrHandler($$) {
   local $_  = shift;
@@ -322,8 +322,8 @@ my sub OptProc($\%\%\%\@) {
       my ($M1, $M2);
       unshift(@Args, $_); s/"/\\"/g foreach @Args;
       join(' ', @Args) =~ /^(.*?)(?:\s+%%\s+(.*?))?$/;
-      $1 and $M1 = "-m \"$1\"" or $M1 = '';
-      $2 and $M2 = "-m \"$2\"" or $M2 = '';
+        $1 and $M1 = "-m \"$1\"" or $M1 = '';
+        $2 and $M2 = "-m \"$2\"" or $M2 = '';
       undef @Args;
       return (1, $M1.' '.$M2);
     }
@@ -346,10 +346,10 @@ my sub OptProc($\%\%\%\@) {
     my $Hash = shift;
     $Prio{(%$Hash)[0]} = 0 if scalar %$Hash == 1 and scalar %Prio != 1;
     sort
-    { $Prio{$a} = 9 if $a eq 'D';     $Prio{$b} = 9 if $b eq 'D';
-      $Prio{$a} = 0 if not $Prio{$a}; $Prio{$b} = 0 if not $Prio{$b};
-      return -1 * ($Prio{$a} <=> $Prio{$b});
-    } keys %$Hash;
+      { $Prio{$a} = 9 if $a eq 'D';     $Prio{$b} = 9 if $b eq 'D';
+        $Prio{$a} = 0 if not $Prio{$a}; $Prio{$b} = 0 if not $Prio{$b};
+        return -1 * ($Prio{$a} <=> $Prio{$b});
+      } keys %$Hash;
   }
 
   my sub RstrRemove($) {
@@ -523,7 +523,7 @@ if (local $_ = shift) {
     $Action = 'show';
     %Disp = (
       D => '--abbrev-commit', l => '--pretty=medium',  s => '--pretty=oneline',
-       _1 => ''
+      _1 => ''
     );
     %Prio = (l => 1,    s => 2);
     %Rstr = (l => 's',  s => 'l');
