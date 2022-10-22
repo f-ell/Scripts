@@ -344,7 +344,8 @@ my sub OptProc($\%\%\%\@) {
 
   my sub PrioSort(\%) {
     my $Hash = shift;
-    $Prio{(%$Hash)[0]} = 0 if scalar %$Hash == 1 and scalar %Prio != 1;
+    # TODO: watch if this causes issues again (changed from '!= 1')
+    $Prio{(%$Hash)[0]} = 0 if scalar %$Hash == 1 and scalar %Prio == 0;
     sort
       { $Prio{$a} = 9 if $a eq 'D';     $Prio{$b} = 9 if $b eq 'D';
         $Prio{$a} = 0 if not $Prio{$a}; $Prio{$b} = 0 if not $Prio{$b};
@@ -384,7 +385,7 @@ my sub OptProc($\%\%\%\@) {
   }
 
   foreach (PrioSort %Disp) {
-    next if $Prio{$_} <= -1 or not $Disp{$_};
+    next if $Prio{$_} < 0 or not $Disp{$_};
     RstrRemove($_);
     $Opts .= $Disp{$_}.' ';
   }
@@ -422,7 +423,7 @@ my sub TargetProc($$$) {
       s/%/\//; $Targets[0] = $Schema.$Host.$_;
     }
   }
-  elsif (/^rm$/ and $Opts =~ /(?<!--cached)-r(?!--cached)/) {
+  elsif (/^rm$/ and $Opts =~ /(?<!--cached)-r(?!--cached)/ and not $Debug) {
     print STDERR "+---------+\n| WARNING |\n+---------+";
     my $Confirm = '';
     until ($Confirm =~ /^(?:y|n|\n)$/i) {
@@ -470,7 +471,7 @@ if (local $_ = shift) {
       D => '--abbrev-commit',  s => '--pretty=oneline', l => '--pretty=medium',
       n => '--name-only',     _1 => '-4'
     );
-    %Prio = (s => 2,    l => 1,   n => -1,);
+    %Prio = (s => 2,    l => 1,   n => -1);
     %Rstr = (s => 'l',  l => 's');
   }
   elsif (/^i$/) {
