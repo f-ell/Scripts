@@ -1,0 +1,225 @@
+#!/bin/bash
+trap '{ KillSleep; exit; }' SIGTERM SIGINT EXIT
+
+# Features:
+# * single notification when multiple warnings are sent
+#   * needs changing stack tags
+
+# Issue-Tracker | TODO:
+# * currently only supports NVIDIA-GPUs via. `nvidia-smi`
+# * not sure how Ryzen-CPUs display in `sensors` - may break
+# * currently only checks for BAT0 in /sys/class/power_supply
+#   * will 'break' on multi-battery systems
+#
+# * Sensors[@]:35 | Smi[@]:10
+#   * break Sensors on =~ ^$
+
+Author='Nico Pareigis'
+Program=ssm
+Version=0.0.1
+
+BATCAP=/sys/class/power_supply/BAT0/capacity
+BATSTA=/sys/class/power_supply/BAT0/status
+
+
+Err() {
+  printf '%s: %s\n' $Program "$2" 1>&2
+  (( $1 > 0 )) && exit $1
+}
+
+SigHandler() {
+  case $1 in
+    ArgErr) Err 1 'illegal argument - '$2   ;;
+    MisErr) Err 1 'missing argument for '$2 ;;
+    IntErr) Err 1 'value for '$2' must be positive integer.';;
+    *)      Err 7 'no clue what happened - sorry :)';;
+  esac
+}
+
+KillSleep() {
+  [[ $SlPid ]] && kill $SlPid; unset SlPid
+}
+ReInit() {
+  trap - SIGUSR1
+  KillSleep
+  printf '%s\n' 'Sleep timer reset.';
+  Exec
+}
+
+Exist() {
+  [[ -z $2 ]] && SigHandler 'MisErr' $1
+}
+Int() {
+  Exist $1 $2
+  [[ $2 =~ ^[0-9]+$ ]] && (( $2 > 0 )) || SigHandler 'IntErr' $1
+}
+
+Usage() {
+  read -d '' <<-EOF
+		NAME
+		    $Program - simple system monitor for battery percentage, CPU-, and GPU
+		    temperature
+		
+		SYNOPSIS
+		    $Program [OPT [ARG]]...
+
+		DESCRIPTION
+		    $Program will most likely only appeal to users who don't use a statusbar
+		    in their setup and can't see their battery percentage / component temper-
+		    atures at a glance.
+
+		    It is supposed to be run as a background process to send dunst notifi-
+		    cations when battery percentage or component temperatures cross a (con-
+		    figurable) threshold.
+
+		    IMPORTANT:
+		    $Program uses '$Program-{b,c,g}' for its x-dunst-stack-tags. These
+		    should not be populated by the user to avoid any possible conflicts.
+		
+		OPTIONS
+		    -b INT
+		      Notify when battery falls below INT% (defaults to 20%).
+
+		    -c INT
+		      Notify when CPU temperature exceeds INT°C (defaults to 80°C).
+
+		    -e LIST
+		      Exclude components in LIST from being monitored.
+		      LIST should be a comma-separated list of unique characters C, where C
+		      may be any of 'b', 'c', or 'g'.
+
+		    -g INT
+					Notify when GPU temperature exceeds INT°C (defaults to 80°C).
+
+		    -h, --help
+		      Print this help information and exit.
+
+		    -t INT
+					Sleep for INT seconds between each cycle (defaults to 30s).
+		
+		EXIT STATUS
+		    0, on success
+		    1, on argument error
+		    4, on dependency error
+		
+		DEPENDENCIES
+		    dunst
+		    lm_sensors   (\`sensors\`,    optional for CPU warnings)
+		    nvidia_utils (\`nvidia-smi\`, optional for GPU warnings)
+
+		VERSION
+		    $Version
+
+		AUTHOR(S)
+		    $Author
+	EOF
+  printf '%s' "$REPLY"
+  exit 0
+}
+
+
+declare -i BatP=20
+declare -i CpuT=80
+declare -i GpuT=80
+declare -i SlInt=30
+declare -A Track=([b]=1 [c]=1 [g]=1)
+while [[ -n $1 ]]; do
+  case $1 in
+    -h|--help) Usage;;
+    -b) Int '-b' "$2"
+        BatP=$2; shift;;
+    -c) Int '-c' "$2"
+        CpuT=$2; shift;;
+    -e) Exist '-e' "$2"
+        IFS=',' read -r -a List <<< "$2";
+        for X in ${List[@]}; do
+          [[ -n ${Track[$X]} ]] && (( ${Track[$X]} == 1 )) && Track[$X]=0\
+            || SigHandler 'ArgErr' $X
+        done; shift;;
+    -g) Int '-g' "$2"
+        GpuT=$2; shift;;
+    -t) Int '-t' "$2"
+        SlInt=$2; shift;;
+    *) SigHandler 'ArgErr' $1;;
+  esac
+  shift
+done
+
+
+DepCheck() {
+  declare -A Deps=([c]=sensors [g]=nvidia-smi)
+  (( ${Track[c]} == 0 )) && unset Deps[c]
+  (( ${Track[g]} == 0 )) && unset Deps[g]
+
+  declare -i MissingDepCount=0
+  declare -a MissingDeps=()
+
+  for Dep in ${Deps[@]} dunstify; do
+    if ! command -v $Dep 1>/dev/null; then
+      let MissingDepCount++
+      MissingDeps+=($Dep)
+    fi
+  done
+
+  local IFS=','
+  (( $MissingDepCount > 0 )) && Err 4 "Dependency not met -${MissingDeps[*]/#/ }"
+}
+DepCheck
+
+
+Exec() {
+  trap ReInit SIGUSR1
+  declare -A Warn=([b]=0 [c]=0 [g]=0)
+
+  [[ -f $BATCAP ]] || Track[b]=0
+
+  while :; do
+    # Battery:
+    if (( ${Track[b]} == 1 )); then
+      BatC=`<$BATCAP`
+      BatS=`<$BATSTA`
+      (( $BatC <= 20 )) && [[ $BatS =~ ^Discharging$ ]] && Warn[b]=1
+    fi
+
+    # Cpu:
+    if (( ${Track[c]} == 1 )); then
+      declare -a Sensors
+      declare -i CMax=0
+      readarray -t Sensors < <(sensors)
+      for X in "${Sensors[@]}"; do # TODO
+        [[ ! $X =~ ^Core ]] && continue
+        X=${X#Core*:*+}; X=${X%.*C*(*}
+        (( $X > $CMax )) && CMax=$X
+      done
+      (( $CMax > $CpuT )) && Warn[c]=1
+    fi
+
+    # Gpu:
+    if (( ${Track[g]} == 1 )); then
+      declare -a Smi
+      declare -i GMax=0
+      readarray -t Smi < <(nvidia-smi -q -d TEMPERATURE)
+      for X in "${Smi[@]}"; do # TODO
+        [[ ! $X =~ GPU\ Current\ Temp ]] && continue
+        X=${X#*: }; GMax=${X% C}; break
+      done
+      (( $GMax > $GpuT )) && Warn[g]=1
+    fi
+
+    # Send notification where applicable:
+    (( ${Warn[b]} == 1 ))\
+      && dunstify -u critical -h string:x-dunst-stack-tag:$Program-b\
+        'Bat: '$BatC'%'
+    (( ${Warn[c]} == 1 ))\
+      && dunstify -u critical -h string:x-dunst-stack-tag:$Program-c\
+        'CPU: '$CMax'°C'
+    (( ${Warn[g]} == 1 ))\
+      && dunstify -u critical -h string:x-dunst-stack-tag:$Program-g\
+        'GPU: '$GMax'°C'
+
+    # Go back to sleep
+    sleep $SlInt &
+    SlPid=$!; wait $SlPid
+  done
+}
+Exec
