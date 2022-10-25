@@ -344,13 +344,13 @@ my sub OptProc($\%\%\%\@) {
 
   my sub PrioSort(\%) {
     my $Hash = shift;
-    # TODO: watch if this causes issues again (changed from '!= 1')
-    $Prio{(%$Hash)[0]} = 0 if scalar %$Hash == 1 and scalar %Prio == 0;
-    sort
-      { $Prio{$a} = 9 if $a eq 'D';     $Prio{$b} = 9 if $b eq 'D';
-        $Prio{$a} = 0 if not $Prio{$a}; $Prio{$b} = 0 if not $Prio{$b};
-        return -1 * ($Prio{$a} <=> $Prio{$b});
-      } keys %$Hash;
+    foreach (keys %$Hash) {
+      if (not $Prio{$_}) {
+        do {  $Prio{$_} = 9; next; } if /^D$/;
+              $Prio{$_} = 0;
+      }
+    }
+    sort { return -1 * ($Prio{$a} <=> $Prio{$b}); } keys %$Hash;
   }
 
   my sub RstrRemove($) {
@@ -358,8 +358,6 @@ my sub OptProc($\%\%\%\@) {
     if (local $_ = $Rstr{$K}) {
       my @Rstr = split(':');
       delete $Disp{$_} foreach @Rstr;
-      # TODO: potential solution to dynamic priority issue
-      # foreach (@Rstr) { delete $Disp{$_}; delete $Prio{$_} if $Prio{$_}; }
     }
   }
 
