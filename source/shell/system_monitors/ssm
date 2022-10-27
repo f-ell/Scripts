@@ -178,7 +178,7 @@ Exec() {
     if (( ${Track[b]} == 1 )); then
       BatC=`<$BATCAP`
       BatS=`<$BATSTA`
-      (( $BatC <= 20 )) && [[ $BatS =~ ^Discharging$ ]] && Warn[b]=1
+      (( $BatC <= $BatP )) && [[ $BatS =~ ^Discharging$ ]] && Warn[b]=1
     fi
 
     # Cpu:
