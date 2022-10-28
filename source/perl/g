@@ -402,7 +402,7 @@ my sub TargetProc($$$) {
   undef $TargetReq
     if /^branch/  and $Opts =~ /--list/
     or /^commit$/ and $Opts =~ /--amend/
-    or /^merge$/  and $Opts =~ /--(abort|continue|quit)
+    or /^merge$/  and $Opts =~ /--(abort|continue|quit)/
     or /^remote$/ and $Opts =~ /-v/
     or /^tag$/    and $Opts =~ /-(l|n)/;
 
