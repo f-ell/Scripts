@@ -7,6 +7,7 @@ use warnings; use strict; $\ = "\n";
 # * git-commit -S | git-log --show-signature
 # Issue-tracker:
 # * git-remote rm doesn't allow '--' syntax % use dynamic opt - but like, why
+#   * seems to be working with git v2.38.1?
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
@@ -318,7 +319,7 @@ my sub OptProc($\%\%\%\@) {
     if ($Action eq 'clone' and $Disp{_1} eq '' and /^\d+$/) {
       return (1, '--depth '.$_) 
     }
-    if ($Action =~ /^commit|tag$/ and $Disp{_1} eq '') {
+    if ($Action =~ /^commit|merge|tag$/ and $Disp{_1} eq '') {
       my ($M1, $M2);
       unshift(@Args, $_); s/"/\\"/g foreach @Args;
       join(' ', @Args) =~ /^(.*?)(?:\s+%%\s+(.*?))?$/;
@@ -398,11 +399,13 @@ my sub TargetProc($$$) {
 
   local $_ = $Action;
   # Verify sufficient number of targets present:
-  undef $TargetReq if /^branch$/ and $Opts =~ /--list/;
-  undef $TargetReq if /^commit$/ and $Opts =~ /--amend/;
-  undef $TargetReq if /^merge$/  and $Opts =~ /--(abort|continue|quit)/;
-  undef $TargetReq if /^remote$/ and $Opts =~ /-v/;
-  undef $TargetReq if /^tag$/    and $Opts =~ /-l|-n/;
+  undef $TargetReq
+    if /^branch/  and $Opts =~ /--list/
+    or /^commit$/ and $Opts =~ /--amend/
+    or /^merge$/  and $Opts =~ /--(abort|continue|quit)
+    or /^remote$/ and $Opts =~ /-v/
+    or /^tag$/    and $Opts =~ /-(l|n)/;
+
   if ($TargetReq) {
     if (scalar @Targets == 1) {
       SigHandler('MvDErr')  if /^mv$/;
@@ -591,7 +594,10 @@ unless ($Debug) {
 
 # Build command string
 # --------------------
-my $Command = "git $Action $Opts -- @Targets"; $Command =~ s/\s+/ /g;
+my $Command = "git $Action $Opts -- @Targets";
+# TODO: add 'remote'?
+$Command =~ s/--\s// if $Action =~ /merge/ and $Opts =~ /--(abort|continue|quit)/;
+$Command =~ s/\s+/ /g;
 
 # Repository check
 # ----------------
