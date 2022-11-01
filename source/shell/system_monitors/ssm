@@ -118,10 +118,7 @@ Usage() {
 }
 
 
-declare -i BatP=20
-declare -i CpuT=80
-declare -i GpuT=80
-declare -i SlInt=30
+declare -i BatP=20 CpuT=80 GpuT=80 SlInt=30
 declare -A Track=([b]=1 [c]=1 [g]=1)
 while [[ -n $1 ]]; do
   case $1 in
@@ -169,11 +166,14 @@ DepCheck
 
 Exec() {
   trap ReInit SIGUSR1
-  declare -A Warn=([b]=0 [c]=0 [g]=0)
 
   [[ -f $BATCAP ]] || Track[b]=0
 
   while :; do
+    declare -A Warn=([b]=0 [c]=0 [g]=0)
+    declare -a Sensors  Smi
+    declare -i CMax=0   GMax=0
+
     # Battery:
     if (( ${Track[b]} == 1 )); then
       BatC=`<$BATCAP`
@@ -183,8 +183,6 @@ Exec() {
 
     # Cpu:
     if (( ${Track[c]} == 1 )); then
-      declare -a Sensors
-      declare -i CMax=0
       readarray -t Sensors < <(sensors)
       for X in "${Sensors[@]}"; do # TODO
         [[ ! $X =~ ^Core ]] && continue
@@ -196,8 +194,6 @@ Exec() {
 
     # Gpu:
     if (( ${Track[g]} == 1 )); then
-      declare -a Smi
-      declare -i GMax=0
       readarray -t Smi < <(nvidia-smi -q -d TEMPERATURE)
       for X in "${Smi[@]}"; do # TODO
         [[ ! $X =~ GPU\ Current\ Temp ]] && continue
@@ -217,7 +213,7 @@ Exec() {
       && dunstify -u critical -h string:x-dunst-stack-tag:$Program-g\
         'GPU: '$GMax'°C'
 
-    # Go back to sleep
+    # Go back to sleep:
     sleep $SlInt &
     SlPid=$!; wait $SlPid
   done
