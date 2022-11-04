@@ -4,7 +4,11 @@ use warnings; use strict; $\ = "\n";
 
 # Features:
 # * consider dropping all checks when running with D
-# * git-commit -S | git-log --show-signature
+# * commands:
+#     +git-rebase (-i)
+#     +git-reset (--soft,--hard)
+#     git-merge --ff, --no-ff (needs restrict with all existing)
+#     git-commit -S | git-log --show-signature
 # Issue-tracker:
 # * git-remote rm doesn't allow '--' syntax % use dynamic opt - but like, why
 #   * seems to be working with git v2.38.1?
@@ -40,7 +44,7 @@ my sub TargetErrHandler($$) {
   if ((/^switch$/ and $O =~ /\Wd\W/) or /^revert$/) {
     $Err = 'Comm';
   }
-  elsif (/^branch|merge|switch$/) {
+  elsif (/^merge|switch$/) {
     $Err = 'Branch';
   }
   elsif (/^clone$/)   { $Err = 'URL'; }
@@ -52,160 +56,162 @@ my sub TargetErrHandler($$) {
 
 my sub D {
   return "    D
-      Run $Program in debug mode. Print relevant information to STDOUT, but
-      don't run the actual git command.";
+        Run $Program in debug mode. Print relevant information to STDOUT, but
+        don't run the actual git command.";
 }
 my sub h {
   return "    [-]h [OPT]
-      Print help information and exit.
-      When passed a valid option name as the first parameter, only print infor-
-      mation concerning that option. Subsequent parameters are discarded.";
+        Print help information and exit.
+        When passed a valid option name as the first parameter, only print infor-
+        mation concerning that option. Subsequent parameters are discarded.";
 }
 my sub a {
   return "    a [p] -- FILE...
-      Run 'git add' on FILE... .
-        'p' => --patch";
+        Run 'git add' on FILE... .
+          'p' => --patch";
 }
 my sub b {
-  return "    b [cdlm] [-- BRANCH...]
-      Run 'git branch' on BRANCH.
-        'c' => -c
-        'd' => -d
-        'l' => --list, default
-        'm' => -m";
+  return "    b [acdm] [-- BRANCH...]
+        Run 'git branch' on BRANCH.
+          'a' => -a
+          'c' => -c
+          'd' => -d
+          'm' => -m";
 }
 my sub c {
   return "    c [a] ['commit msg' [%% 'secondary commit msg']] -- FILE...
-      Run 'git commit' on FILE... .
-        'a' => --amend
+        Run 'git commit' on FILE... .
+          'a' => --amend
 
-      Optionally takes one or two commit messages, where '%%' acts as a sepa-
-      rator between the two. The second commit message is passed as a submes-
-      sage to git.
-      NOTE: Unquoted double dashes in commit mesages will break parsing!";
+        Optionally takes one or two commit messages, where '%%' acts as a sepa-
+        rator between the two. The second commit message is passed as a submes-
+        sage to git.
+        NOTE: Unquoted double dashes in commit mesages will break parsing!";
 }
 my sub d {
   return "    d [c] [COMMIT...] [-- FILE...]
-      Run 'git diff' on the repository, COMMIT... and/or FILE... .
-        'c' => --cached";
+        Run 'git diff' on the repository, COMMIT... and/or FILE... .
+          'c' => --cached";
 }
 my sub f {
   return "    f
-      Run 'git fetch' on the current repository.";
+        Run 'git fetch' on the current repository.";
 }
 my sub i {
   return "    i [b] [BRANCH] [-- DIR]
-      Run 'git init' on the current directory or DIR.
-        'b'      => --bare
-        'BRANCH' => -b BRANCH (default is '-b master')";
+        Run 'git init' on the current directory or DIR.
+          'b'      => --bare
+          'BRANCH' => -b BRANCH (default is '-b master')";
 }
 my sub l {
-  return "    l [ls] [n] [INT|a] [-- FILE...]
-      Run 'git log --abbrev-commit' on the current repository, or on FILE... .
-        'l'   => --pretty=medium
-        's'   => --pretty=oneline, default
-        'n'   => --name-only
-        'INT' => -INT (default is '-4', 'a' unsets this)";
+  return "    l [ls] [n|st] [INT|a] [-- FILE...]
+        Run 'git log --abbrev-commit' on the current repository, or on FILE... .
+          'l'   => --pretty=medium
+          's'   => --pretty=oneline, default
+          'n'   => --name-only
+          'st'  => --stat
+          'INT' => -INT (default is '-4', 'a' unsets this)";
 }
 my sub _m {
   return "    m [acq] [-- BRANCH]
-      Run 'git merge' on BRANCH.
-        'a' => --abort
-        'c' => --continue
-        'q' => --quit";
+        Run 'git merge' on BRANCH.
+          'a' => --abort
+          'c' => --continue
+          'q' => --quit";
 }
 my sub _s {
   return "    s [ls] [a] [-- FILE...]
-      Run 'git status' on the current repository, or on FILE... .
-        'l' => --long
-        's' => -s, default
-        'a' => --ahead-behind";
+        Run 'git status' on the current repository, or on FILE... .
+          'l' => --long
+          's' => -s, default
+          'a' => --ahead-behind";
 }
 my sub t {
   return "    t [adlns] [tag msg] -- TAG [OBJECT...]
-      Run 'git tag' with TAG as the tag's name on OBJECT.
-        'a' => -a
-        'd' => -d
-        'l' => -l, default
-        'n' => -n
-        's' => -s
+        Run 'git tag' with TAG as the tag's name on OBJECT.
+          'a' => -a
+          'd' => -d
+          'l' => -l, default
+          'n' => -n
+          's' => -s
 
-      Optionally takes tag messages. The format is the same as for 'c'.";
+        Optionally takes tag messages. The format is the same as for 'c'.";
 }
 my sub cl {
   return "    cl [INT] -- URL [DIR]
-      Clone the repository located at URL to DIR.
-        'INT' => --depth INT
+        Clone the repository located at URL to DIR.
+          'INT' => --depth INT
 
-      Omitting the URL schema assumes https. A URL starting with a percent sign
-      (%) is assumed to refer to a github repository. Local repositories may be
-      cloned with both relative and absolute URLs.
+        Omitting the URL schema assumes https. A URL starting with a percent
+        sign (%) is assumed to refer to a github repository. Local repositories
+        may be cloned with both relative and absolute URLs.
 
-      '$Program cl -- [https://]github.com/user/repo | %user/repo'
-      will try to clone a repository at 'https://github.com/user/repo'";
+        '$Program cl -- [https://]github.com/user/repo | %user/repo'
+        will try to clone a repository at 'https://github.com/user/repo'";
 }
 my sub mv {
   return "    mv -- SOURCE... DEST
-      Run 'git mv' on SOURCE... DEST.";
+        Run 'git mv' on SOURCE... DEST.";
 }
 my sub pl {
   return "    pl [nr]
-      Run 'git pull' on the current repository.
-        'n' => --no-rebase, default
-        'r' => --rebase";
+        Run 'git pull' on the current repository.
+          'n' => --no-rebase
+          'r' => --rebase";
 }
 my sub ps {
-  return "    ps
-      Run 'git push' on the current repository.";
+  return "    ps [u] [-- URL [REF]]
+        Run 'git push' on the current repository.
+          'u' => -u";
 }
 my sub rm {
   return "    rm [cn] [r] -- FILE...
-      Run 'git rm' on FILE... .
-        'c' => --cached, default
-        'n' => \"not --cached\"
-        'r' => -r";
+        Run 'git rm' on FILE... .
+          'c' => --cached, default
+          'n' => \"not --cached\"
+          'r' => -r";
 }
 my sub sh {
   return "    sh [ls] [-- OBJECT...]
-      Run 'git show --abbrev-commit' on OBJECT... .
-        'l' => --pretty=medium
-        's' => --pretty=oneline, default";
+        Run 'git show --abbrev-commit' on OBJECT... .
+          'l' => --pretty=medium
+          's' => --pretty=oneline, default";
 }
 my sub st {
   return "    st [clous] [-- FILE...]
-      Run 'git stash' on FILE... .
-        'c' => clear
-        'l' => list
-        'o' => pop
-        'u' => push
-        's' => show";
+        Run 'git stash' on FILE... .
+          'c' => clear
+          'l' => list
+          'o' => pop
+          'u' => push
+          's' => show";
 }
 my sub sw {
   return "    sw [d] -- BRANCH|COMMIT
-      Run 'git switch' on BRANCH or COMMIT.
-        'd' => -d";
+        Run 'git switch' on BRANCH or COMMIT.
+          'd' => -d";
 }
 my sub rem {
   return "    rem [arRsuv] [-- NAME]
-      Run 'git remote' on NAME.
-        'a' => add
-        'r' => rename
-        'R' => rm
-        's' => show
-        'u' => set-url
-        'v' => -v, default";
+        Run 'git remote' on NAME.
+          'a' => add
+          'r' => rename
+          'R' => rm
+          's' => show
+          'u' => set-url
+          'v' => -v, default";
 }
 my sub res {
   return "    res [ns] -- FILE...
-      Run 'git restore' on FILE... .
-        'n' => \"not --staged\"
-        's' => --staged, default";
+        Run 'git restore' on FILE... .
+          'n' => \"not --staged\"
+          's' => --staged, default";
 }
 my sub rev {
   return "    rev [en] -- COMMIT...
-      Run 'git revert' on COMMIT... .
-        'e' => -e, default
-        'n' => --no-edit";
+        Run 'git revert' on COMMIT... .
+          'e' => -e, default
+          'n' => --no-edit";
 }
 
 my @Help = (
@@ -242,7 +248,10 @@ DESCRIPTION
     string.
 
 OPTIONS";
-print foreach @Help;
+foreach (@Help) {
+  print;
+  print '';
+}
 print "EXIT STATUS
     0, on success
     1, on argument error
@@ -263,10 +272,8 @@ AUTHOR(S)
 
 
 my $Debug     = ''; my $TargetOpt = ''; my $TargetReq = '';
-my @Optional  = ('d', 'i', 'l', 's', 'sh', 'st');
-my @Requires  = (
-  'a', 'b', 'c', 'm', 't', 'cl', 'mv', 'rm', 'sw', 'rem', 'res', 'rev'
-);
+my @Optional  = ('b', 'c', 'd', 'i', 'l', 's', 'sh', 'st');
+my @Requires  = ('a', 'm', 't', 'cl', 'mv', 'rm', 'sw', 'rem', 'res', 'rev');
 
 
 # Preliminary checks
@@ -355,6 +362,12 @@ my sub OptProc($\%\%\%\@) {
   }
 
   my sub RstrRemove($) {
+    # TODO: potential implementation:
+    # does NOT work with defaults and if some options shouldn't restrict
+    # -> _ value only for specific keys?
+    # if ($Rstr{_} and $Rstr{_} == 1) {
+    #   undef %Disp; return;
+    # }
     my $K = shift;
     if (local $_ = $Rstr{$K}) {
       my @Rstr = split(':');
@@ -400,8 +413,7 @@ my sub TargetProc($$$) {
   local $_ = $Action;
   # Verify sufficient number of targets present:
   undef $TargetReq
-    if /^branch/  and $Opts =~ /--list/
-    or /^commit$/ and $Opts =~ /--amend/
+    if /^commit$/ and $Opts =~ /--amend/
     or /^merge$/  and $Opts =~ /--(abort|continue|quit)/
     or /^remote$/ and $Opts =~ /-v/
     or /^tag$/    and $Opts =~ /-(l|n)/;
@@ -451,9 +463,9 @@ if (local $_ = shift) {
   }
   elsif (/^b$/) {
     $Action = 'branch';
-    %Disp = (c => '-c',     d => '-d',    l => '--list',  m => '-m');
-    %Prio = (c => 1,        d => 1,       l => 2,         m => 1);
-    %Rstr = (c => 'd:l:m',  d => 'c:l:m', l => 'c:d:m',   m => 'c:d:l');
+    %Disp = (a => '-a',     c => '-c',    d => '-d',    m => '-m');
+    %Prio = (a => -1,       c => -2,      d => -2,      m => -2);
+    %Rstr = (a => 'c:d:m',  c => 'a:d:m', d => 'a:c:m', m => 'a:c:d');
   }
   elsif (/^c$/) {
     $Action = 'commit';
@@ -469,11 +481,11 @@ if (local $_ = shift) {
   elsif (/^l$/) {
     $Action = 'log';
     %Disp = (
-      D => '--abbrev-commit',  s => '--pretty=oneline', l => '--pretty=medium',
-      n => '--name-only',     _1 => '-4'
+      D => '--abbrev-commit',  s => '--pretty=oneline',  l => '--pretty=medium',
+      n => '--name-only',     st => '--stat',           _1 => '-4'
     );
-    %Prio = (s => 2,    l => 1,   n => -1);
-    %Rstr = (s => 'l',  l => 's');
+    %Prio = (s => 2,    l => 1,   n => -1,    st => -1);
+    %Rstr = (s => 'l',  l => 's', n => 'st',  st => 'n');
   }
   elsif (/^i$/) {
     $Action = 'init';
@@ -481,6 +493,7 @@ if (local $_ = shift) {
     %Prio = (b => -1);
   }
   elsif (/^m$/) {
+    # TODO: implement --ff | --no-ff as Prio < 0, with restrict all
     $Action = 'merge';
     %Disp = (a => '--abort',  c => '--continue',  q => '--quit');
     %Prio = (a => -1,         c => -2,            q => -2);
@@ -511,10 +524,14 @@ if (local $_ = shift) {
   elsif (/^pl$/) {
     $Action = 'pull';
     %Disp = (n => '--no-rebase',  r => '--rebase');
-    %Prio = (n => 2,              r => 1);
+    %Prio = (n => -1,             r => -2);
     %Rstr = (n => 'r',            r => 'n');
   }
-  elsif (/^ps$/) { $Action = 'push'; }
+  elsif (/^ps$/) {
+    $Action = 'push';
+    %Disp = (u => '-u');
+    %Prio = (u => -1);
+  }
   elsif (/^rm$/) {
     $Action = 'rm';
     %Disp = (c => '--cached', n => ' ', r => '-r');
