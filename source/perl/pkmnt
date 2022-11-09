@@ -2,28 +2,33 @@
 use strict; use warnings; $\ = "\n";
 
 # Feature:
-#   * implement -u|--uuid
 # Issue Tracker:
-#   * current option processing allows 's' and '-long'
+# * current option processing allows 's' and '-long'
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.0.3';
+my $Version   = '0.0.4';
 
-use constant DISKBYID   => '/dev/disk/by-id/';
+my $LType = 'i';
+my $LDir  = '/dev/disk/';
+use constant BYID       => 'by-id/';
+use constant BYUUID     => 'by-uuid/';
 use constant PROCMOUNT  => '/proc/mounts';
 use constant CONFHOME   => $ENV{XDG_CONFIG_HOME}.'/';
 
 
-my $C         = '';
+my $Clean     = 'f';
+my $UsbOnly   = 'f';
 my $Dev       = '';
+my $Uuid      = '';
 my $Part      = 1;
 my $MTime     = 0;
+
 my $Mnt       = 'f';
 my $MntPoint  = '';
 my $FMnt      = 'f';
 my $UMnt      = 't';
-my $UsbOnly   = 'f';
+
 my $DbF       = '';
 
 my %Opts = (
@@ -43,24 +48,25 @@ my sub Clean {
 }
 my sub Err {
   print STDERR "$Program: $_[1]";
-  Clean()     if $C eq 't';
+  Clean()     if $Clean eq 't';
   exit($_[0]) if $_[0] > 0;
 }
 my sub SigHandler { local $_ = shift;
-  Err(  1, 'illegal argument - '.shift)           if /^ArgErr$/;
-  Err(  1, 'not enough arguments for '.shift)     if /^NumErr$/;
-  Err(  2, shift.' doesn\'t exist.')              if /^DevErr$/;
-  Err(  2, 'udisks2 mount failure.')              if /^UMErr$/;
-  Err(  2, 'udisks2 unmount failure.')            if /^UUErr$/;
-  Err(  3, 'no valid database found.')            if /^DbEErr$/;
-  Err(  3, 'file ('.shift.') doesn\'t exist.')    if /^DbFErr$/;
-  Err(  3, 'keepass fatal.')                      if /^KeeErr$/;
-  Err(  7, 'can\'t close dirhandle for '.shift)   if /^DCErr$/;
-  Err(  7, 'can\'t open dirhandle for '.shift)    if /^DOErr$/;
-  Err(  7, 'can\'t close filehandle for '.shift)  if /^FCErr$/;
-  Err(  7, 'can\'t open filehandle for '.shift)   if /^FOErr$/;
-  Err(  7, 'dependency not met - '.shift)         if /^DepErr$/; 
-  Err(130, 'caught interrupt.')                   if /^SigInt$/;
+  Err(  1, 'illegal argument - '.shift)             if /^ArgErr$/;
+  Err(  1, 'not enough arguments for '.shift)       if /^NumErr$/;
+  Err(  2, shift.' doesn\'t exist.')                if /^DevErr$/;
+  Err(  2, 'uuid not found - '.shift)               if /^UuidErr$/;
+  Err(  2, 'udisks2 mount failure.')                if /^UMErr$/;
+  Err(  2, 'udisks2 unmount failure.')              if /^UUErr$/;
+  Err(  3, 'no valid database found.')              if /^DbEErr$/;
+  Err(  3, 'file ('.shift.') doesn\'t exist.')      if /^DbFErr$/;
+  Err(  3, 'keepass fatal.')                        if /^KeeErr$/;
+  Err(  7, 'couldn\'t close dirhandle for '.shift)  if /^DCErr$/;
+  Err(  7, 'couldn\'t open dirhandle for '.shift)   if /^DOErr$/;
+  Err(  7, 'couldn\'t close filehandle for '.shift) if /^FCErr$/;
+  Err(  7, 'couldn\'t open filehandle for '.shift)  if /^FOErr$/;
+  Err(  7, 'dependency not met - '.shift)           if /^DepErr$/; 
+  Err(130, 'caught interrupt.')                     if /^SigInt$/;
 } $SIG{INT} = sub { SigHandler('SigInt'); };
 
 my sub Help {
@@ -74,8 +80,8 @@ DESCRIPTION
     perl-keepass-mount ($Program) can be used to quickly and conveniently access
     a KeePass database.
     Unless already mounted, the partition the database resides on will be auto-
-    mounted in userspace via udisks2. If the disk was not mounted initially,
-    it will automatically be unmounted after KeePass exits (see -n and -f flags).
+    mounted in userspace via udisks2. If the disk was not mounted initially, it
+    will automatically be unmounted after KeePass exits (see -n and -f flags).
 
     PATH may be used to specify a relative or absolute database path in the
     host filesystem, OR a path relative to the partition's mount point. For the
@@ -107,15 +113,17 @@ OPTIONS
       (also see -f)
 
   -o | --only-usb
-      Only consider devices beginning with 'usb-' when auto-detecting device
-      and partition.
+      Only consider devices beginning with 'usb-' (see '/dev/disk/by-id/') when
+      auto-detecting device and partition.
+      (ignored by -u)
 
   -p | --partition INT
       Use INT as the partition number the database resides on.
+      (ignored by -u)
 
-  -u | --uuid UUID (TO BE IMPLEMENTED)
-      Use UUID as the partition's uuid.
-      (also see -b)
+  -u | --uuid UUID
+      Use UUID (NOT part-UUID) as the partition's UUID.
+      (also see -b, ignores -o and -p)
 
 EXIT STATUS
     0, on success
@@ -182,8 +190,8 @@ while (local $_ = shift) {
     $Part = $_;
   }
   elsif (/^u|uuid$/) {
-    local $_ = shift;
-    SigHandler('ArgErr', $_) if not /^\d+$/;
+    $LType  = 'u';
+    $Uuid   = shift;
   }
   elsif (/^$/) {
     $DbF = join(' ', @ARGV) if @ARGV; last;
@@ -192,20 +200,35 @@ while (local $_ = shift) {
 
 
 unless ($Dev) {
-# Get newest connected disk and relevant partition:
-  opendir(DH, DISKBYID) or SigHandler('DOErr', DISKBYID);
-    local @_ = readdir DH; splice(@_, 0, 2);
-  closedir(DH) or die SigHandler('DCErr', DISKBYID);
+  # Set appropriate lookup directory:
+  if    ($LType eq 'i') { $LDir .= BYID; }
+  elsif ($LType eq 'u') { $LDir .= BYUUID; }
 
-  foreach (@_) {
-    next if /-part\d+$/ or ($UsbOnly eq 't' and not /^usb-/);
-    if ($MTime < (lstat DISKBYID.$_)[9]) {
-      (readlink DISKBYID.$_) =~ /([a-z0-9]*)$/;
-      $Dev    = '/dev/'.$1.$Part;
-      $MTime  = (stat _)[9];
-      # Speed up processing with large number of devices:
-      last if time - $MTime < 10;
+  opendir(DH, $LDir) or SigHandler('DOErr', $LDir);
+    local @_ = readdir DH; splice(@_, 0, 2);
+  closedir(DH) or die SigHandler('DCErr', $LDir);
+
+  if ($LType eq 'i') {
+      # Get newest connected disk and relevant partition:
+      foreach (@_) {
+        next if /-part\d+$/ or ($UsbOnly eq 't' and not /^usb-/);
+        if ($MTime < (lstat $LDir.$_)[9]) {
+          (readlink $LDir.$_) =~ /([a-z0-9]*)$/;
+          $Dev    = '/dev/'.$1.$Part;
+          $MTime  = (stat _)[9];
+          # Speed up processing with large number of devices:
+          last if time - $MTime < 10;
+        }
+      }
+  }
+  elsif ($LType = 'u') {
+    foreach (@_) {
+      if (/^$Uuid$/i) {
+        (readlink $LDir.$_) =~ /([a-z0-9]*)$/;
+        $Dev = '/dev/'.$1; last;
+      }
     }
+    SigHandler('UuidErr', $Uuid) if not $Dev;
   }
 } else {
   $Dev = '/dev/'.$Dev.$Part;
@@ -232,7 +255,7 @@ if ($Mnt eq 't') {
 else {
   `udisksctl mount -b $Dev` =~ /^Mounted $Dev at (.*)$/ or SigHandler('UMErr');
   $MntPoint = $1;
-  $C = 't';
+  $Clean = 't';
 }
 
 
