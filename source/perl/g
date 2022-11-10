@@ -4,7 +4,6 @@ use warnings; use strict; $\ = "\n";
 
 # Features:
 # * commands:
-#     +git-rebase (-i)
 #     +git-reset (--soft,--hard)
 #     git-merge --ff, --no-ff (needs restrict with all existing)
 #     git-commit -S | git-log --show-signature
@@ -38,23 +37,21 @@ my sub SigHandler {
     ($ErrC, $ErrM) = (3, 'not in a git repository.')    if /^RepoErr$/;
     ($ErrC, $ErrM) = (4, 'dependency not met - '.$_[0]) if /^DepErr$/;
   }
-
   return if $Debug; Err($ErrC, $ErrM);
-}
+} @SIG{'INT','TERM'} = (\&SigHandler) x 2;
+
 my sub TargetErrHandler($$) {
   local $_  = shift;
   my $O     = shift;
   my $Err   = 'File';
 
   if    ((/^switch$/ and $O =~ /\Wd\W/) or /^revert$/)  { $Err = 'Comm'; }
-  elsif (/^branch|merge|switch$/)                       { $Err = 'Branch'; }
+  elsif (/^(?:branch|merge|rebase|switch)$/)            { $Err = 'Branch'; }
   elsif (/^clone$/)                                     { $Err = 'URL'; }
   elsif (/^remote$/)                                    { $Err = 'Name'; }
   elsif (/^tag$/)                                       { $Err = 'Tag'; }
-
   SigHandler($Err.'Err');
 }
-@SIG{'INT','TERM'} = (\&SigHandler) x 2;
 
 my sub D {
   return "    D
@@ -118,8 +115,8 @@ my sub l {
           'INT' => -INT (default is '-4', 'a' shows full log)";
 }
 my sub _m {
-  return "    m [acq]
-    m [merge msg] -- BRANCH
+  return "    m [merge msg] -- BRANCH
+    m [acq]
         Shorthand for 'git merge', where
           'a' => --abort
           'c' => --continue
@@ -204,6 +201,15 @@ my sub sw {
         Shorthand for 'git switch', where
           'd' => -d";
 }
+my sub reb {
+  return "    reb [i] [-- BRANCH]
+    reb [acq]
+        Shorthand for 'git rebase', where
+          'i' => -i
+          'a' => --abort
+          'c' => --continue
+          'q' => --quit";
+}
 my sub rem {
   return "    rem v [-- NAME]
     rem a -- NAME URL
@@ -233,7 +239,7 @@ my sub rev {
 my @Help = (
   D, h, a, b, c, d, f, i, l, _m, _s, t,
   cl, mv, pl, ps, rm, sh, st, sw,
-  rem, res, rev
+  reb, rem, res, rev
 );
 my sub Help {
 print "NAME
@@ -249,7 +255,7 @@ DESCRIPTION
 
     $Program currently provides shorthands for the following commands:
     add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
-    remote, restore, revert, rm, show, stash, status, switch, tag
+    rebase, remote, restore, revert, rm, show, stash, status, switch, tag
 
     $Program supports 'verbatim' strings - they are passed verbatim to Git to
     provide access to options that are not natively supported. They are useable
@@ -290,7 +296,7 @@ AUTHOR(S)
 
 my $TargetOpt = ''; my $TargetReq = ''; my $TargetBan = '';
 my @Bans      = ('f', 'pl');
-my @Optional  = ('c', 'd', 'i', 'l', 's', 'ps', 'sh', 'sw', 'st');
+my @Optional  = ('c', 'd', 'i', 'l', 's', 'ps', 'sh', 'sw', 'st', 'reb');
 my @Requires  = ('a', 'b', 'm', 't', 'cl', 'mv', 'rm', 'rem', 'res', 'rev');
 
 
@@ -304,7 +310,7 @@ if (local $_ = $ARGV[0]) {
   my $Help;
   do { $Debug = 'True'; shift; } if /^D$/;
 
-  if (local $_ = $ARGV[0] and /^(?:-)?h|--help|-\?$/) {
+  if (local $_ = $ARGV[0] and /^(?:(?:-)?h|--help|-\?)$/) {
     if ($Debug) {$Help = 'True'; }
     else {
       do { Help();    exit(0); } if not $ARGV[1];
@@ -368,7 +374,7 @@ my sub OptProc($\%\%\%\@) {
       return (1, MsgGen($_, @Args));
     }
 
-    if ($Action =~ /^diff|show$/ and $Disp{_1} eq '') {
+    if ($Action =~ /^(?:diff|show)$/ and $Disp{_1} eq '') {
       unshift(@Args, $_); my $Commits = join(' ', @Args); undef @Args;
       return(1, $Commits);
     }
@@ -383,12 +389,12 @@ my sub OptProc($\%\%\%\@) {
     }
 
     if ($Action =~ /^merge$/ and $Disp{_1} eq '') {
-      SigHandler('BanErr', $_) if $Opts =~ /--(abort|continue|quit)/;
+      SigHandler('BanErr', $_) if $Opts =~ /--(?:abort|continue|quit)/;
       return (1, MsgGen($_, @Args));
     }
 
     if ($Action eq 'tag' and $Disp{_1} eq '') {
-      if ($Opts =~ /-(a|d|s)/) { return (1, MsgGen($_, @Args)); }
+      if ($Opts =~ /-(?:a|d|s)/) { return (1, MsgGen($_, @Args)); }
       else {
         SigHandler('ArgErr', $_) if $_ !~ /\d+/ or grep(/a|d|s/, @Args);
         return (1, '-n'.$_);
@@ -459,13 +465,13 @@ my sub TargetProc($$$) {
   local $_ = $Action;
   # Verify sufficient number of targets present:
   undef $TargetReq
-    if /^branch$/ and $Opts !~ /-(c|d|m)/
+    if /^branch$/ and $Opts !~ /-(?:c|d|m)/
     or /^remote$/ and $Opts =~ /-v/
-    or /^tag$/    and $Opts =~ /-(l|n\d+)/;
+    or /^tag$/    and $Opts =~ /-(?:l|n\d+)/;
 
   do { undef $TargetReq; $TargetBan = 'True'; }
-    if /^merge$/ and $Opts =~ /--(abort|continue|quit)/
-    or /^stash$/ and $Opts =~ /clear/;
+    if /^(?:merge|rebase)$/ and $Opts =~ /--(?:abort|continue|quit)/
+    or /^stash$/            and $Opts =~ /clear/;
 
   SigHandler('BanErr') if $TargetBan and @Targets;
 
@@ -609,6 +615,12 @@ if (local $_ = shift) {
     %Disp = (d => '-d');
     %Prio = (d => -1);
   }
+  elsif (/^reb$/) {
+    $Action = 'rebase';
+    %Disp = (a => '--abort',  c => '--continue',  i => '-i',    q => '--quit');
+    %Prio = (a => -1,         c => -2,            i => -1,      q => -2);
+    %Rstr = (a => 'c:i:q',    c => 'a:i:q',       i => 'a:c:q', q => 'a:c:i');
+  }
   elsif (/^rem$/) {
     $Action = 'remote';
     %Disp = (
@@ -657,13 +669,14 @@ unless ($Debug) {
 # Build command string
 # --------------------
 my $Command = "git $Action $Opts -- @Targets";
-# TODO: need add git-remote?
-$Command =~ s/--\s// if $Action =~ /merge/ and $Opts =~ /--(abort|continue|quit)/;
+# TODO: need add git-remote, git-rebase?
+$Command =~ s/--\s//
+  if $Action =~ /merge/ and $Opts =~ /--(?:abort|continue|quit)/;
 $Command =~ s/\s+/ /g;
 
 # Repository check
 # ----------------
-unless ($Debug or $Action =~ /^clone|init$/) {
+unless ($Debug or $Action =~ /^(?:clone|init)$/) {
   `git rev-parse --is-inside-git-dir 2>/dev/null` or SigHandler('RepoErr');
 }
 
