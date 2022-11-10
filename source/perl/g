@@ -3,7 +3,6 @@ use warnings; use strict; $\ = "\n";
 # Note: As of 28/09/2022, this script is, mostly, in maintenance mode.
 
 # Features:
-# * consider dropping all checks when running with D
 # * commands:
 #     +git-rebase (-i)
 #     +git-reset (--soft,--hard)
@@ -11,45 +10,48 @@ use warnings; use strict; $\ = "\n";
 #     git-commit -S | git-log --show-signature
 # Issue-tracker:
 # * git-remote rm doesn't allow '--' syntax % use dynamic opt - but like, why
-#   * seems to be working with git v2.38.1?
+#   * seems to be fine with git v2.38.1+?
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.1.7 - maintenance mode';
+my $Version   = '0.1.8 - maintenance mode';
 
+my $Debug = ''; my $ErrM = ''; my $ErrC = 0;
 my sub Err {
-  printf STDERR "$Program: %s\n", $_[1];
+  printf STDERR "$Program: $_[1]\n";
   exit($_[0]) if $_[0] > 0;
 }
 my sub SigHandler {
-  local $_ = shift;
-  Err(  1, 'no help available - '.$_[0])  if /^HelpErr$/;
-  Err(  1, 'illegal argument - '.$_[0])   if /^ArgErr$/;
-  Err(  2, 'missing branch name.')        if /^BranchErr$/;
-  Err(  2, 'missing commit.')             if /^CommErr$/;
-  Err(  2, 'nothing to debug.')           if /^DebugErr$/;
-  Err(  2, 'missing filename.')           if /^FileErr$/;
-  Err(  2, 'missing destination.')        if /^MvDErr$/;
-  Err(  2, 'missing name.')               if /^NameErr$/;
-  Err(  2, 'missing tagname.')            if /^TagErr$/;
-  Err(  2, 'missing URL.')                if /^URLErr$/;
-  Err(  3, 'not in a git repository.')    if /^RepoErr$/;
-  Err(  4, 'dependency not met - '.$_[0]) if /^DepErr$/;
-  Err(130, 'caught interrupt.')           if /^INT|TERM$/;
+  local $_ = shift; Err(130, 'caught interrupt.')     if /^INT|TERM$/;
+
+  unless ($ErrM) {
+    ($ErrC, $ErrM) = (1, 'no help available - '.$_[0])  if /^HelpErr$/;
+    ($ErrC, $ErrM) = (1, 'illegal argument - '.$_[0])   if /^ArgErr$/;
+    ($ErrC, $ErrM) = (1, 'no arguments allowed.')       if /^BanErr$/;
+    ($ErrC, $ErrM) = (2, 'missing branch name.')        if /^BranchErr$/;
+    ($ErrC, $ErrM) = (2, 'missing commit.')             if /^CommErr$/;
+    ($ErrC, $ErrM) = (2, 'missing filename.')           if /^FileErr$/;
+    ($ErrC, $ErrM) = (2, 'missing destination.')        if /^MvDErr$/;
+    ($ErrC, $ErrM) = (2, 'missing name.')               if /^NameErr$/;
+    ($ErrC, $ErrM) = (2, 'missing tagname.')            if /^TagErr$/;
+    ($ErrC, $ErrM) = (2, 'missing URL.')                if /^URLErr$/;
+    ($ErrC, $ErrM) = (3, 'not in a git repository.')    if /^RepoErr$/;
+    ($ErrC, $ErrM) = (4, 'dependency not met - '.$_[0]) if /^DepErr$/;
+  }
+
+  return if $Debug; Err($ErrC, $ErrM);
 }
 my sub TargetErrHandler($$) {
   local $_  = shift;
   my $O     = shift;
   my $Err   = 'File';
-  if ((/^switch$/ and $O =~ /\Wd\W/) or /^revert$/) {
-    $Err = 'Comm';
-  }
-  elsif (/^merge|switch$/) {
-    $Err = 'Branch';
-  }
-  elsif (/^clone$/)   { $Err = 'URL'; }
-  elsif (/^remote$/)  { $Err = 'Name'; }
-  elsif (/^tag$/)     { $Err = 'Tag'; }
+
+  if    ((/^switch$/ and $O =~ /\Wd\W/) or /^revert$/)  { $Err = 'Comm'; }
+  elsif (/^branch|merge|switch$/)                       { $Err = 'Branch'; }
+  elsif (/^clone$/)                                     { $Err = 'URL'; }
+  elsif (/^remote$/)                                    { $Err = 'Name'; }
+  elsif (/^tag$/)                                       { $Err = 'Tag'; }
+
   SigHandler($Err.'Err');
 }
 @SIG{'INT','TERM'} = (\&SigHandler) x 2;
@@ -62,84 +64,91 @@ my sub D {
 my sub h {
   return "    [-]h [OPT]
         Print help information and exit.
-        When passed a valid option name as the first parameter, only print infor-
-        mation concerning that option. Subsequent parameters are discarded.";
+        When passed a valid command name as the first argument, only print infor-
+        mation concerning that command. Subsequent arguments are discarded.";
 }
 my sub a {
   return "    a [p] -- FILE...
-        Run 'git add' on FILE... .
+        Shorthand for 'git add', where
           'p' => --patch";
 }
 my sub b {
   return "    b [acdm] [-- BRANCH...]
-        Run 'git branch' on BRANCH.
+        Shorthand for 'git branch', where
           'a' => -a
           'c' => -c
           'd' => -d
           'm' => -m";
 }
 my sub c {
-  return "    c [a] ['commit msg' [%% 'secondary commit msg']] -- FILE...
-        Run 'git commit' on FILE... .
+  return "    c [a] [commit msg [%% submsg]] [-- FILE...]
+        Shorthand for 'git commit', where
           'a' => --amend
 
         Optionally takes one or two commit messages, where '%%' acts as a sepa-
         rator between the two. The second commit message is passed as a submes-
         sage to git.
-        NOTE: Unquoted double dashes in commit mesages will break parsing!";
+        NOTE: Unquoted double dashes or single percent signs (quoted or not) in
+        mesages will break parsing!";
 }
 my sub d {
   return "    d [c] [COMMIT...] [-- FILE...]
-        Run 'git diff' on the repository, COMMIT... and/or FILE... .
-          'c' => --cached";
+    d [s] [-- FILE...]
+        Shorthand for 'git diff', where
+          'c' => --cached
+          's' => --stat";
 }
 my sub f {
   return "    f
-        Run 'git fetch' on the current repository.";
+        Shorthand for 'git-fetch'.";
 }
 my sub i {
   return "    i [b] [BRANCH] [-- DIR]
-        Run 'git init' on the current directory or DIR.
+        Shorthand for 'git init', where
           'b'      => --bare
           'BRANCH' => -b BRANCH (default is '-b master')";
 }
 my sub l {
   return "    l [ls] [n|st] [INT|a] [-- FILE...]
-        Run 'git log --abbrev-commit' on the current repository, or on FILE... .
+        Shorthand for 'git log --abbrev-commit', where
           'l'   => --pretty=medium
           's'   => --pretty=oneline, default
           'n'   => --name-only
           'st'  => --stat
-          'INT' => -INT (default is '-4', 'a' unsets this)";
+          'INT' => -INT (default is '-4', 'a' shows full log)";
 }
 my sub _m {
-  return "    m [acq] [-- BRANCH]
-        Run 'git merge' on BRANCH.
+  return "    m [acq]
+    m [merge msg] -- BRANCH
+        Shorthand for 'git merge', where
           'a' => --abort
           'c' => --continue
-          'q' => --quit";
+          'q' => --quit
+
+        Optionally takes merge messages. See 'c' for information on formatting.";
 }
 my sub _s {
   return "    s [ls] [a] [-- FILE...]
-        Run 'git status' on the current repository, or on FILE... .
+        Shorthand for 'git status', where
           'l' => --long
           's' => -s, default
           'a' => --ahead-behind";
 }
 my sub t {
-  return "    t [adlns] [tag msg] -- TAG [OBJECT...]
-        Run 'git tag' with TAG as the tag's name on OBJECT.
-          'a' => -a
-          'd' => -d
-          'l' => -l, default
-          'n' => -n
-          's' => -s
+  return "    t [INT] [l]      [-- TAG [OBJECT...]]
+    t [ads] [tag msg] -- TAG [OBJECT...]
+        Shorthand for 'git tag', where
+          'l'   => -l, default
+          'INT' => -nINT
+          'a'   => -a
+          'd'   => -d
+          's'   => -s
 
-        Optionally takes tag messages. The format is the same as for 'c'.";
+        Optionally takes tag messages. See 'c' for information on formatting.";
 }
 my sub cl {
   return "    cl [INT] -- URL [DIR]
-        Clone the repository located at URL to DIR.
+        Shorthand for 'git clone', where
           'INT' => --depth INT
 
         Omitting the URL schema assumes https. A URL starting with a percent
@@ -151,65 +160,72 @@ my sub cl {
 }
 my sub mv {
   return "    mv -- SOURCE... DEST
-        Run 'git mv' on SOURCE... DEST.";
+        Shorthand for 'git mv'.";
 }
 my sub pl {
   return "    pl [nr]
-        Run 'git pull' on the current repository.
+        Shorthand for 'git pull', where
           'n' => --no-rebase
           'r' => --rebase";
 }
 my sub ps {
   return "    ps [u] [-- URL [REF]]
-        Run 'git push' on the current repository.
+        Shorthand for 'git push', where
           'u' => -u";
 }
 my sub rm {
   return "    rm [cn] [r] -- FILE...
-        Run 'git rm' on FILE... .
+        Shorthand for 'git rm', where
           'c' => --cached, default
           'n' => \"not --cached\"
-          'r' => -r";
+          'r' => -r
+
+        $Program will prompt the user when trying to run recursively with 'n'.";
 }
 my sub sh {
-  return "    sh [ls] [-- OBJECT...]
-        Run 'git show --abbrev-commit' on OBJECT... .
+  return "    sh [ls] [COMMIT...] [-- OBJECT...]
+        Shorthand for 'git show --abbrev-commit', where
           'l' => --pretty=medium
           's' => --pretty=oneline, default";
 }
 my sub st {
-  return "    st [clous] [-- FILE...]
-        Run 'git stash' on FILE... .
+  return "    st c
+    st u     [-- FILE...]
+    st [los] [-- REF...]
+        Shorthand for 'git stash', where
           'c' => clear
-          'l' => list
-          'o' => pop
           'u' => push
+          'l' => list, default
+          'o' => pop
           's' => show";
 }
 my sub sw {
-  return "    sw [d] -- BRANCH|COMMIT
-        Run 'git switch' on BRANCH or COMMIT.
+  return "    sw [d] [-- -|BRANCH|COMMIT]
+        Shorthand for 'git switch', where
           'd' => -d";
 }
 my sub rem {
-  return "    rem [arRsuv] [-- NAME]
+  return "    rem v [-- NAME]
+    rem a -- NAME URL
+    rem r -- OLD  NEW
+    rem R -- NAME
+    rem u -- NAME [URL]
         Run 'git remote' on NAME.
+          'v' => -v show, default
           'a' => add
           'r' => rename
           'R' => rm
-          's' => show
-          'u' => set-url
-          'v' => -v, default";
+          'u' => set-url";
 }
 my sub res {
   return "    res [ns] -- FILE...
-        Run 'git restore' on FILE... .
+        Shorthand for 'git restore', where
           'n' => \"not --staged\"
           's' => --staged, default";
 }
 my sub rev {
   return "    rev [en] -- COMMIT...
-        Run 'git revert' on COMMIT... .
+        Shorthand for 'git revert', where
           'e' => -e, default
           'n' => --no-edit";
 }
@@ -224,30 +240,31 @@ print "NAME
     $Program - shorthands for git commands
 
 SYNOPSIS
-    $Program [D] [OPT [SUBOPTS]] [-- BRANCH|COMMIT|NAME|FILE|OBJECT|TAG|URL]
+    $Program [D] [CMD [OPTS]] [-- TARGET]
 
 DESCRIPTION
     $Program aims to provide some useful shorthands for basic git operations. It
     doesn't try to support all of git's features or functionality.
-    Running $Program without any options runs 'git status -s' on the repository.
+    Running $Program without any arguments runs 'git status -s'.
 
     $Program currently provides shorthands for the following commands:
     add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
     remote, restore, revert, rm, show, stash, status, switch, tag
 
-    $Program supports 'verbatim' strings - they are passed verbatim to Git and
-    can be used to access options that are not natively supported. They are use-
-    able in conjunction with $Program\'s builtin options.
+    $Program supports 'verbatim' strings - they are passed verbatim to Git to
+    provide access to options that are not natively supported. They are useable
+    in conjunction with $Program\'s builtin options.
     A verbatim string is embedded by enclosing it in percent signs (%).
     Omitting the second percent sign matches against '--' / EOL.
 
-    NOTE: Verbatim strings are not validated any further; they may clash with
-    $Program\'s default options. When used alongside a commit message, try to
-    embed the string before, or after the message(s). Be wary when using a '%'
-    inside of a commit message, ideally embed the message itself as a verbatim
-    string.
+    NOTE: Verbatim strings are not validated; they may clash with $Program\'s
+    default options.
+    When used alongside messages (commit, merge, tag), embed the string at the
+    very start, or the very end of the option string! Avoid using a literal '%'
+    inside of the messages, quoted or not!
 
-OPTIONS";
+OPTIONS
+    In the following section, '=>' should be read as 'expands to'.\n";
 foreach (@Help) {
   print;
   print '';
@@ -271,9 +288,10 @@ AUTHOR(S)
 }
 
 
-my $Debug     = ''; my $TargetOpt = ''; my $TargetReq = '';
-my @Optional  = ('b', 'c', 'd', 'i', 'l', 's', 'sh', 'st');
-my @Requires  = ('a', 'm', 't', 'cl', 'mv', 'rm', 'sw', 'rem', 'res', 'rev');
+my $TargetOpt = ''; my $TargetReq = ''; my $TargetBan = '';
+my @Bans      = ('f', 'pl');
+my @Optional  = ('c', 'd', 'i', 'l', 's', 'ps', 'sh', 'sw', 'st');
+my @Requires  = ('a', 'b', 'm', 't', 'cl', 'mv', 'rm', 'rem', 'res', 'rev');
 
 
 # Preliminary checks
@@ -283,17 +301,24 @@ my @Requires  = ('a', 'm', 't', 'cl', 'mv', 'rm', 'sw', 'rem', 'res', 'rev');
 
 # Help, Debug, Requires / Optional:
 if (local $_ = $ARGV[0]) {
-  if (/^(?:-)?h|--help|-\?$/) {
-    do { Help();    exit(0); }  if not $ARGV[1];
-    do { print $_;  exit(0); }  if local ($_) = grep(/^\s*$ARGV[1]\W/, @Help);
-    SigHandler('HelpErr', $ARGV[1]);
+  my $Help;
+  do { $Debug = 'True'; shift; } if /^D$/;
+
+  if (local $_ = $ARGV[0] and /^(?:-)?h|--help|-\?$/) {
+    if ($Debug) {$Help = 'True'; }
+    else {
+      do { Help();    exit(0); } if not $ARGV[1];
+      do { print $_;  exit(0); } if local ($_) = grep(/^\s*$ARGV[1]\W/, @Help);
+      SigHandler('HelpErr', $ARGV[1]);
+    }
   }
 
-  do { $Debug = 'True'; shift; }  if /^D$/;
-  SigHandler('DebugErr')          if $Debug and not $ARGV[0];
+  Err(2, 'cannot debug help.')  if $Debug and $Help;
+  Err(2, 'nothing to debug.')   if $Debug and not $ARGV[0];
 
-  foreach (@Requires) { do { $TargetReq = 'True'; last } if /^$ARGV[0]$/ };
-  foreach (@Optional) { do { $TargetOpt = 'True'; last } if /^$ARGV[0]$/ };
+  foreach (@Bans)     { do { $TargetBan = 'True'; last; } if /^$ARGV[0]$/ };
+  foreach (@Optional) { do { $TargetOpt = 'True'; last; } if /^$ARGV[0]$/ };
+  foreach (@Requires) { do { $TargetReq = 'True'; last; } if /^$ARGV[0]$/ };
 }
 
 
@@ -321,30 +346,53 @@ my sub OptProc($\%\%\%\@) {
   undef $rDisp; undef $rPrio; undef $rRstr; undef $rArgs;
 
   # Helper subroutines
+  my sub MsgGen($\@) {
+    my ($M1, $M2);
+    local $_ = shift; my $Args = shift;
+
+    unshift(@$Args, $_); s/"/\\"/g foreach @$Args;
+    join(' ', @$Args) =~ /^(.*?)(?:\s+%%\s+(.*?))?$/;
+      $1 and $M1 = "-m \"$1\"" or $M1 = '';
+      $2 and $M2 = "-m \"$2\"" or $M2 = '';
+    undef @$Args;
+    return $M1.' '.$M2;
+  }
+
   my sub DynProc($) {
     local $_ = shift;
     if ($Action eq 'clone' and $Disp{_1} eq '' and /^\d+$/) {
       return (1, '--depth '.$_) 
     }
-    if ($Action =~ /^commit|merge|tag$/ and $Disp{_1} eq '') {
-      my ($M1, $M2);
-      unshift(@Args, $_); s/"/\\"/g foreach @Args;
-      join(' ', @Args) =~ /^(.*?)(?:\s+%%\s+(.*?))?$/;
-        $1 and $M1 = "-m \"$1\"" or $M1 = '';
-        $2 and $M2 = "-m \"$2\"" or $M2 = '';
-      undef @Args;
-      return (1, $M1.' '.$M2);
+
+    if ($Action =~ /^commit$/ and $Disp{_1} eq '') {
+      return (1, MsgGen($_, @Args));
     }
+
     if ($Action =~ /^diff|show$/ and $Disp{_1} eq '') {
       unshift(@Args, $_); my $Commits = join(' ', @Args); undef @Args;
       return(1, $Commits);
     }
+
     if ($Action eq 'init' and $Disp{_1} eq '-b master') {
       return (1, '-b '.$_);
     }
+
     if ($Action eq 'log' and $Disp{_1} eq '-4') {
       return (1, ' ')     if /^a$/;
       return (1, '-'.$_)  if /^\d+$/;
+    }
+
+    if ($Action =~ /^merge$/ and $Disp{_1} eq '') {
+      SigHandler('BanErr', $_) if $Opts =~ /--(abort|continue|quit)/;
+      return (1, MsgGen($_, @Args));
+    }
+
+    if ($Action eq 'tag' and $Disp{_1} eq '') {
+      if ($Opts =~ /-(a|d|s)/) { return (1, MsgGen($_, @Args)); }
+      else {
+        SigHandler('ArgErr', $_) if $_ !~ /\d+/ or grep(/a|d|s/, @Args);
+        return (1, '-n'.$_);
+      }
     }
 
     return undef;
@@ -365,9 +413,7 @@ my sub OptProc($\%\%\%\@) {
     # TODO: potential implementation:
     # does NOT work with defaults and if some options shouldn't restrict
     # -> _ value only for specific keys?
-    # if ($Rstr{_} and $Rstr{_} == 1) {
-    #   undef %Disp; return;
-    # }
+    # if ($Rstr{_} and $Rstr{_} == 1) { undef %Disp; return; }
     my $K = shift;
     if (local $_ = $Rstr{$K}) {
       my @Rstr = split(':');
@@ -413,10 +459,15 @@ my sub TargetProc($$$) {
   local $_ = $Action;
   # Verify sufficient number of targets present:
   undef $TargetReq
-    if /^commit$/ and $Opts =~ /--amend/
-    or /^merge$/  and $Opts =~ /--(abort|continue|quit)/
+    if /^branch$/ and $Opts !~ /-(c|d|m)/
     or /^remote$/ and $Opts =~ /-v/
-    or /^tag$/    and $Opts =~ /-(l|n)/;
+    or /^tag$/    and $Opts =~ /-(l|n\d+)/;
+
+  do { undef $TargetReq; $TargetBan = 'True'; }
+    if /^merge$/ and $Opts =~ /--(abort|continue|quit)/
+    or /^stash$/ and $Opts =~ /clear/;
+
+  SigHandler('BanErr') if $TargetBan and @Targets;
 
   if ($TargetReq) {
     if (scalar @Targets == 1) {
@@ -428,7 +479,8 @@ my sub TargetProc($$$) {
   }
 
   # Edge-case handling:
-  if (/^clone$/ and local $_ = $Targets[0]) {
+  if (/^clone$/) {
+    local $_ = $Targets[0] if $Targets[0];
     unless (m{^(?:\.)?/}) {
       my $Schema = ''; my $Host = '';
       $Schema = 'https://'    if m{^(?!http(?:s)?://)};
@@ -445,8 +497,8 @@ my sub TargetProc($$$) {
     }
     SigHandler('INT') if $Confirm =~ /^(?:n)?\n$/i;
   }
-  elsif (/^switch$/ and not $Opts and not @Targets) {
-    @Targets = 'master';
+  elsif (/^switch$/ and not @Targets) {
+    @Targets = '-';
   }
 
   # Escape spaces:
@@ -474,8 +526,8 @@ if (local $_ = shift) {
   }
   elsif (/^d$/) {
     $Action = 'diff';
-    %Disp = (c => '--cached', _1 => '');
-    %Prio = (c => -1);
+    %Disp = (c => '--cached', s => '--stat', _1 => '');
+    %Prio = (c => -1,         s => -1);
   }
   elsif (/^f$/) { $Action = 'fetch'; }
   elsif (/^l$/) {
@@ -493,9 +545,8 @@ if (local $_ = shift) {
     %Prio = (b => -1);
   }
   elsif (/^m$/) {
-    # TODO: implement --ff | --no-ff as Prio < 0, with restrict all
     $Action = 'merge';
-    %Disp = (a => '--abort',  c => '--continue',  q => '--quit');
+    %Disp = (a => '--abort',  c => '--continue',  q => '--quit', _1 => '');
     %Prio = (a => -1,         c => -2,            q => -2);
     %Rstr = (a => 'c:q',      c => 'a:q',         q => 'a:c');
   }
@@ -507,14 +558,9 @@ if (local $_ = shift) {
   }
   elsif (/^t$/) {
     $Action = 'tag';
-    %Disp = (
-      a => '-a', d => '-d', l => '-l', n => '-n', s => '-s', _1 => ''
-    );
-    %Prio = (a => 1, d => 1, l => 2, n => 1, s => 1);
-    %Rstr = (
-      a => 'd:l:n:s', d => 'a:l:n:s', l => 'a:d:n:s', n => 'a:d:l:s',
-      s => 'a:d:l:n'
-    );
+    %Disp = (a => '-a',     d => '-d',    l => '-l',    s => '-s', _1 => '');
+    %Prio = (a => 1,        d => 1,       l => 2,       s => 1);
+    %Rstr = (a => 'd:l:s',  d => 'a:l:s', l => 'a:d:s', s => 'a:d:l');
   }
   elsif (/^cl$/) {
     $Action = 'clone';
@@ -566,13 +612,12 @@ if (local $_ = shift) {
   elsif (/^rem$/) {
     $Action = 'remote';
     %Disp = (
-      a => 'add', r => 'rename', R => 'rm', s => 'show', u => 'set-url',
-      v => '-v'
+      a => 'add', r => 'rename', R => 'rm', u => 'set-url', v => '-v show'
     );
-    %Prio = (a => 1, r => 1, R => 1, s => 1, u => 1, v => 2);
+    %Prio = (a => 1, r => 1, R => 1, u => 1, v => 2);
     %Rstr = (
-      a => 'r:R:s:u:v', r => 'a:R:s:u:v', R => 'a:r:s:u:v', s => 'a:r:R:u:v',
-      u => 'a:r:R:s:v', v => 'a:r:R:s:u'
+      a => 'r:R:u:v', r => 'a:R:u:v', R => 'a:r:u:v', u => 'a:r:R:v',
+      v => 'a:r:R:u'
     );
   }
   elsif (/^res$/) {
@@ -612,7 +657,7 @@ unless ($Debug) {
 # Build command string
 # --------------------
 my $Command = "git $Action $Opts -- @Targets";
-# TODO: add 'remote'?
+# TODO: need add git-remote?
 $Command =~ s/--\s// if $Action =~ /merge/ and $Opts =~ /--(abort|continue|quit)/;
 $Command =~ s/\s+/ /g;
 
@@ -627,8 +672,13 @@ unless ($Debug or $Action =~ /^clone|init$/) {
 if ($Debug) {
   $TargetReq or $TargetReq = 'False';
   $TargetOpt or $TargetOpt = 'False';
-  print "- DEBUG MODE -\nAction: $Action\nOpts:   $Opts\n";
-  print "TargetReq: $TargetReq\nTargetOpt: $TargetOpt\nTarget(s):";
+  print "- DEBUG MODE -\nAction : $Action\nOpts   : $Opts\n";
+  print "TargetReq : $TargetReq\nTargetOpt : $TargetOpt\nTarget(s) :";
   print "    $_" foreach @Targets;
   print "\nGit command to be run:\n    $Command";
+  if ($ErrM) {
+    print "\nScript will refuse execution:";
+    print "    Reason      : `$ErrM`";
+    print "    Exit status : `$ErrC`";
+  }
 } else { system("$Command"); }
