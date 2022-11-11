@@ -5,11 +5,12 @@ use warnings; use strict; $\ = "\n";
 # Features:
 # * commands:
 #     +git-reset (--soft,--hard)
-#     git-merge --ff, --no-ff (needs restrict with all existing)
+#     git-merge --ff, --no-ff
 #     git-commit -S | git-log --show-signature
 # Issue-tracker:
-# * git-remote rm doesn't allow '--' syntax % use dynamic opt - but like, why
-#   * seems to be fine with git v2.38.1+?
+# * git-remote rm doesn't allow '--' syntax | seems to be fine with git v2.38.1+?
+# Internal:
+# * special %Rstr value to auto-restrict all other values
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
@@ -160,14 +161,15 @@ my sub mv {
         Shorthand for 'git mv'.";
 }
 my sub pl {
-  return "    pl [nr]
+  return "    pl [nr] [-- REPO [REF]]
         Shorthand for 'git pull', where
           'n' => --no-rebase
           'r' => --rebase";
 }
 my sub ps {
-  return "    ps [u] [-- URL [REF]]
+  return "    ps [du] [-- REPO [REF]]
         Shorthand for 'git push', where
+          'd' => -d
           'u' => -u";
 }
 my sub rm {
@@ -212,16 +214,17 @@ my sub reb {
 }
 my sub rem {
   return "    rem v [-- NAME]
-    rem a -- NAME URL
+    rem [au] -- NAME URL
     rem r -- OLD  NEW
     rem R -- NAME
-    rem u -- NAME [URL]
         Run 'git remote' on NAME.
           'v' => -v show, default
           'a' => add
+          'u' => set-url
           'r' => rename
           'R' => rm
-          'u' => set-url";
+
+          URLs are treated the same way they are for 'c'.";
 }
 my sub res {
   return "    res [ns] -- FILE...
@@ -295,9 +298,9 @@ AUTHOR(S)
 
 
 my $TargetOpt = ''; my $TargetReq = ''; my $TargetBan = '';
-my @Bans      = ('f', 'pl');
-my @Optional  = ('c', 'd', 'i', 'l', 's', 'ps', 'sh', 'sw', 'st', 'reb');
-my @Requires  = ('a', 'b', 'm', 't', 'cl', 'mv', 'rm', 'rem', 'res', 'rev');
+my @Bans      = qw'f';
+my @Optional  = qw'c d i l s pl ps sh sw st reb';
+my @Requires  = qw'a b m t cl mv rm rem res rev';
 
 
 # Preliminary checks
@@ -416,10 +419,6 @@ my sub OptProc($\%\%\%\@) {
   }
 
   my sub RstrRemove($) {
-    # TODO: potential implementation:
-    # does NOT work with defaults and if some options shouldn't restrict
-    # -> _ value only for specific keys?
-    # if ($Rstr{_} and $Rstr{_} == 1) { undef %Disp; return; }
     my $K = shift;
     if (local $_ = $Rstr{$K}) {
       my @Rstr = split(':');
@@ -478,20 +477,21 @@ my sub TargetProc($$$) {
   if ($TargetReq) {
     if (scalar @Targets == 1) {
       SigHandler('MvDErr')  if /^mv$/;
-      SigHandler('URLErr')  if /^remote$/ and $Opts =~ /add/;
+      SigHandler('URLErr')  if /^remote$/ and $Opts =~ /add|set-url/;
       SigHandler('NameErr') if /^remote$/ and $Opts =~ /rename/;
     }
     elsif (not @Targets) { TargetErrHandler($_, $Opts); }
   }
 
   # Edge-case handling:
-  if (/^clone$/) {
-    local $_ = $Targets[0] if $Targets[0];
-    unless (m{^(?:\.)?/}) {
-      my $Schema = ''; my $Host = '';
-      $Schema = 'https://'    if m{^(?!http(?:s)?://)};
-      $Host   = 'github.com'  if m{^%.*$};
-      s/%/\//; $Targets[0] = $Schema.$Host.$_;
+  if (/^clone|remote$/) {
+    for my $i (0 .. $#Targets)  { local $_ = $Targets[$i];
+      unless (m{^(?:\.){0,2}/}) { # Ignore if local repository
+        my $Schema = ''; my $Host = '';
+        $Schema = 'https://'    if m{^(?!.*://).*?/};
+        $Host   = 'github.com'  if /^%/;
+        s/%/\//; $Targets[$i] = $Schema.$Host.$_;
+      }
     }
   }
   elsif (/^rm$/ and $Opts =~ /(?<!--cached)-r(?!--cached)/ and not $Debug) {
@@ -581,8 +581,8 @@ if (local $_ = shift) {
   }
   elsif (/^ps$/) {
     $Action = 'push';
-    %Disp = (u => '-u');
-    %Prio = (u => -1);
+    %Disp = (d => '-d', u => '-u');
+    %Prio = (d => -1,   u => -1);
   }
   elsif (/^rm$/) {
     $Action = 'rm';
@@ -669,7 +669,6 @@ unless ($Debug) {
 # Build command string
 # --------------------
 my $Command = "git $Action $Opts -- @Targets";
-# TODO: need add git-remote, git-rebase?
 $Command =~ s/--\s//
   if $Action =~ /merge/ and $Opts =~ /--(?:abort|continue|quit)/;
 $Command =~ s/\s+/ /g;
