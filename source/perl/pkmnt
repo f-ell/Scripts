@@ -253,7 +253,8 @@ if ($Mnt eq 't') {
   $UMnt = 'f';
 }
 else {
-  `udisksctl mount -b $Dev` =~ /^Mounted $Dev at (.*)$/ or SigHandler('UMErr');
+  `udisksctl mount -b $Dev 2>/dev/null` =~ /^Mounted $Dev at (.*)$/
+    or SigHandler('UMErr');
   $MntPoint = $1;
   $Clean = 't';
 }
