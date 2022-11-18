@@ -167,8 +167,9 @@ my sub pl {
           'r' => --rebase";
 }
 my sub ps {
-  return "    ps [du] [-- REPO [REF]]
+  return "    ps [t] [du] [-- REPO [REF]]
         Shorthand for 'git push', where
+          't' => --tags
           'd' => -d
           'u' => -u";
 }
@@ -486,8 +487,8 @@ my sub TargetProc($$$) {
   # Edge-case handling:
   if (/^clone|remote$/) {
     for my $i (0 .. $#Targets)  { local $_ = $Targets[$i];
-      unless (m{^(?:\.){0,2}/}) { # Ignore if local repository
-        my $Schema = ''; my $Host = '';
+      unless (m{^(?:\.){0,2}/}) { # Ignore if local path
+        my ($Schema, $Host) = ('') x 2;
         $Schema = 'https://'    if m{^(?!.*://).*?/};
         $Host   = 'github.com'  if /^%/;
         s/%/\//; $Targets[$i] = $Schema.$Host.$_;
@@ -581,8 +582,8 @@ if (local $_ = shift) {
   }
   elsif (/^ps$/) {
     $Action = 'push';
-    %Disp = (d => '-d', u => '-u');
-    %Prio = (d => -1,   u => -1);
+    %Disp = (d => '-d', t => '--tags',  u => '-u');
+    %Prio = (d => -1,   t => -1,        u => -1);
   }
   elsif (/^rm$/) {
     $Action = 'rm';
