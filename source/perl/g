@@ -8,9 +8,8 @@ use warnings; use strict; $\ = "\n";
 #     git-merge --ff, --no-ff
 #     git-commit -S | git-log --show-signature
 # Issue-tracker:
-# * git-remote rm doesn't allow '--' syntax | seems to be fine with git v2.38.1+?
 # Internal:
-# * special %Rstr value to auto-restrict all other values
+# * verify special restrict works with dynamic options
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
@@ -21,9 +20,8 @@ my sub Err {
   printf STDERR "$Program: $_[1]\n";
   exit($_[0]) if $_[0] > 0;
 }
-my sub SigHandler {
-  local $_ = shift; Err(130, 'caught interrupt.')     if /^INT|TERM$/;
-
+my sub SigHandler { local $_ = shift;
+  Err(130, 'caught interrupt.') if /^INT|TERM$/;
   unless ($ErrM) {
     ($ErrC, $ErrM) = (1, 'no help available - '.$_[0])  if /^HelpErr$/;
     ($ErrC, $ErrM) = (1, 'illegal argument - '.$_[0])   if /^ArgErr$/;
@@ -332,7 +330,6 @@ if (local $_ = $ARGV[0]) {
 }
 
 
-# -----------------
 # Option processing
 # -----------------
 my $Action  = ''; my $Opts = ''; my @Targets  = ();
@@ -355,7 +352,7 @@ my sub OptProc($\%\%\%\@) {
   my %Rstr = %$rRstr; my @Args = @$rArgs;
   undef $rDisp; undef $rPrio; undef $rRstr; undef $rArgs;
 
-  # Helper subroutines
+  # Helper subroutines:
   my sub MsgGen($\@) {
     my ($M1, $M2);
     local $_ = shift; my $Args = shift;
@@ -368,8 +365,7 @@ my sub OptProc($\%\%\%\@) {
     return $M1.' '.$M2;
   }
 
-  my sub DynProc($) {
-    local $_ = shift;
+  my sub DynProc($) { local $_ = shift;
     if ($Action eq 'clone' and $Disp{_1} eq '' and /^\d+$/) {
       return (1, '--depth '.$_) 
     }
@@ -408,8 +404,7 @@ my sub OptProc($\%\%\%\@) {
     return undef;
   }
 
-  my sub PrioSort(\%) {
-    my $Hash = shift;
+  my sub PrioSort(\%) { my $Hash = shift;
     foreach (keys %$Hash) {
       if (not $Prio{$_}) {
         do {  $Prio{$_} = 9; next; } if /^D$/;
@@ -419,15 +414,31 @@ my sub OptProc($\%\%\%\@) {
     sort { return -1 * ($Prio{$a} <=> $Prio{$b}); } keys %$Hash;
   }
 
-  my sub RstrRemove($) {
-    my $K = shift;
-    if (local $_ = $Rstr{$K}) {
+  my sub RstrRemove($) { my $K = shift;
+    # TODO:
+    # * ignores priority for implicit cascade
+    # * can be used for branch, merge, stash, remote
+    # if ((%Rstr)[0] eq 'ALL') {
+    #   foreach (keys %Disp) {
+    #     next if /^(?:D|_\d+|$K)$/;
+    #     delete %Disp{$_};
+    #   }
+    # }
+
+    return if not local $_ = $Rstr{$K};
+
+    if (/^_$/) {
+      foreach (%Rstr) {
+        next if $_ eq $K;
+        delete $Disp{$_} if $Rstr{$_} and $Rstr{$_} eq '_'
+      }
+    } else {
       my @Rstr = split(':');
       delete $Disp{$_} foreach @Rstr;
     }
   }
 
-  # Actual processing
+  # Actual processing:
   my $S = join(' ', @Args); $S =~ /((?<!%)%(?!%)(.+?)(?(?=(?<!%)%(?!%))%|$))/;
   if ($2) {
     $Verb = $2;
@@ -436,18 +447,18 @@ my sub OptProc($\%\%\%\@) {
   }
 
   while (local $_ = shift @Args) {
-    if ($Disp{$_}) { # Processes static options
+    if ($Disp{$_}) {  # Processes static options
       $Opts .= $Disp{$_}.' ';
       delete $Disp{$_};
       delete $Prio{$_} if $Prio{$_};
       RstrRemove($_);
-    }
-    else { # Processes dynamic option
+    } else {          # Processes dynamic option
       my ($K, $V) = DynProc($_);
       $K and $Disp{'_'.$K} = $V or SigHandler('ArgErr', $_);
     }
   }
 
+  # Build option string through implicit cascade:
   foreach (PrioSort %Disp) {
     next if $Prio{$_} < 0 or not $Disp{$_};
     RstrRemove($_);
@@ -522,9 +533,9 @@ if (local $_ = shift) {
   }
   elsif (/^b$/) {
     $Action = 'branch';
-    %Disp = (a => '-a',     c => '-c',    d => '-d',    m => '-m');
-    %Prio = (a => -1,       c => -2,      d => -2,      m => -2);
-    %Rstr = (a => 'c:d:m',  c => 'a:d:m', d => 'a:c:m', m => 'a:c:d');
+    %Disp = (a => '-a', c => '-c',  d => '-d',  m => '-m');
+    %Prio = (a => -1,   c => -2,    d => -2,    m => -2);
+    %Rstr = (a => '_',  c => '_',   d => '_',   m => '_');
   }
   elsif (/^c$/) {
     $Action = 'commit';
@@ -555,7 +566,7 @@ if (local $_ = shift) {
     $Action = 'merge';
     %Disp = (a => '--abort',  c => '--continue',  q => '--quit', _1 => '');
     %Prio = (a => -1,         c => -2,            q => -2);
-    %Rstr = (a => 'c:q',      c => 'a:q',         q => 'a:c');
+    %Rstr = (a => '_',        c => '_',           q => '_');
   }
   elsif (/^s$/) {
     $Action = 'status';
@@ -602,14 +613,9 @@ if (local $_ = shift) {
   }
   elsif (/^st$/) {
     $Action = 'stash';
-    %Disp = (
-      c => 'clear', l => 'list', o => 'pop', u => 'push', s => 'show'
-    );
-    %Prio = (c => 1, l => 2, o => 1, u => 1, s => 1);
-    %Rstr = (
-      c => 'l:o:u:s',  l => 'c:u:o:s', o => 'c:l:u:s', u => 'c:l:o:s',
-      s => 'c:l:o:u'
-    );
+    %Disp = (c => 'clear',  l => 'list',  o => 'pop', u => 'push',  s => 'show');
+    %Prio = (c => 1,        l => 2,       o => 1,     u => 1,       s => 1);
+    %Rstr = (c => '_',      l => '_',     o => '_',   u => '_',     s => '_');
   }
   elsif (/^sw$/) {
     $Action = 'switch';
@@ -627,11 +633,8 @@ if (local $_ = shift) {
     %Disp = (
       a => 'add', r => 'rename', R => 'rm', u => 'set-url', v => '-v show'
     );
-    %Prio = (a => 1, r => 1, R => 1, u => 1, v => 2);
-    %Rstr = (
-      a => 'r:R:u:v', r => 'a:R:u:v', R => 'a:r:u:v', u => 'a:r:R:v',
-      v => 'a:r:R:u'
-    );
+    %Prio = (a => 1,    r => 1,   R => 1,   u => 1,   v => 2);
+    %Rstr = (a => '_',  r => '_', R => '_', u => '_', v => '_');
   }
   elsif (/^res$/) {
     $Action = 'restore';
