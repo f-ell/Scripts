@@ -17,19 +17,14 @@ use constant PROCMOUNT  => '/proc/mounts';
 use constant CONFHOME   => $ENV{XDG_CONFIG_HOME}.'/';
 
 
-my $Clean     = 'f';
-my $UsbOnly   = 'f';
-my $Dev       = '';
-my $Uuid      = '';
+my ($Clean, $UsbOnly) = ('f') x 2;
+my ($Dev, $Uuid)      = ('')  x 2;
 my $Part      = 1;
 my $MTime     = 0;
 
-my $Mnt       = 'f';
-my $MntPoint  = '';
-my $FMnt      = 'f';
-my $UMnt      = 't';
-
-my $DbF       = '';
+my ($Mnt, $FMnt)      = ('f') x 2;
+my $UMnt              = 't';
+my ($MntPoint, $DbF)  = ('')  x 2;
 
 my %Opts = (
   b => 'blockdev', f => 'forceunmount', h => 'help',
@@ -87,10 +82,10 @@ DESCRIPTION
     host filesystem, OR a path relative to the partition's mount point. For the
     latter, do NOT use leading path separators.
 
-    If PATH is omitted, $Program will try to iteratively match the <LastUsedFile>-
-    <Path>-value in \$XDG_CONFIG_HOME/KeePass/KeePass.config.xml to a file be-
-    neath the mount point. As a last resort, it will look for any *.kdbx files
-    directly below the mount point and settle for the first one.
+    If PATH is omitted, $Program will try to iteratively match //LastUsedFile/
+    Path in \$XDG_CONFIG_HOME/KeePass/KeePass.config.xml to a file beneath the
+    mount point. As a last resort, it will look for any *.kdbx files directly
+    below the mount point and settle for the first one.
 
 OPTIONS
   -b | --blockdev DEV
@@ -281,7 +276,8 @@ else {      # Didn't get '-- PATH'
       $Content = <FH>;
     close(FH) or SigHandler('FCErr', $KpConf);
   }
-  $Content =~ /<LastUsedFile>\n\s*<Path>(?:\.*\/)*(.*?)<\/Path>/; undef $Content;
+  # TODO: consider switching to some XPath module to resolve path
+  $Content =~ m{<LastUsedFile>\n\s*<Path>(?:\.*/)*(.*?)</Path>}; undef $Content;
 
   # Iteratively try to match partial filename to existing database:
   if ($1) {
