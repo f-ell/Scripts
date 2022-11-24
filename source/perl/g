@@ -4,10 +4,14 @@ use warnings; use strict; $\ = "\n";
 
 # Features:
 # * commands:
-#     +git-reset (--soft,--hard)
 #     git-merge --ff, --no-ff
 #     git-commit -S | git-log --show-signature
+#     git-log rev ranges as dynamic
 # Issue-tracker:
+# * dynamic opt for git-reset, restricts with s, h
+#   * has to restrict WITHOUT being removed from %Disp
+#   * loop over all, check if dyn present and process
+#   * $Dynrestrict to disallow all dynamics when static given
 # Internal:
 # * verify special restrict works with dynamic options
 
@@ -17,7 +21,7 @@ my $Version   = '0.1.8 - maintenance mode';
 
 my $Debug = ''; my $ErrM = ''; my $ErrC = 0;
 my sub Err {
-  printf STDERR "$Program: $_[1]\n";
+  printf STDERR "$Program: %s\n", $_[1];
   exit($_[0]) if $_[0] > 0;
 }
 my sub SigHandler { local $_ = shift;
@@ -171,6 +175,13 @@ my sub ps {
           'd' => -d
           'u' => -u";
 }
+my sub re {
+  return "    re -- FILE...
+    re [sh] [-- FILE...]
+        Shothand for 'git reset', where
+          'h' => --hard
+          's' => --soft";
+}
 my sub rm {
   return "    rm [cn] [r] -- FILE...
         Shorthand for 'git rm', where
@@ -240,7 +251,7 @@ my sub rev {
 
 my @Help = (
   D, h, a, b, c, d, f, i, l, _m, _s, t,
-  cl, mv, pl, ps, rm, sh, st, sw,
+  cl, mv, pl, ps, re, rm, sh, st, sw,
   reb, rem, res, rev
 );
 my sub Help {
@@ -257,7 +268,7 @@ DESCRIPTION
 
     $Program currently provides shorthands for the following commands:
     add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
-    rebase, remote, restore, revert, rm, show, stash, status, switch, tag
+    rebase, remote, reset, restore, revert, rm, show, stash, status, switch, tag
 
     $Program supports 'verbatim' strings - they are passed verbatim to Git to
     provide access to options that are not natively supported. They are useable
@@ -299,7 +310,7 @@ AUTHOR(S)
 my $TargetOpt = ''; my $TargetReq = ''; my $TargetBan = '';
 my @Bans      = qw'f';
 my @Optional  = qw'c d i l s pl ps sh sw st reb';
-my @Requires  = qw'a b m t cl mv rm rem res rev';
+my @Requires  = qw'a b m t cl mv re rm rem res rev';
 
 
 # Preliminary checks
@@ -393,6 +404,8 @@ my sub OptProc($\%\%\%\@) {
       return (1, MsgGen($_, @Args));
     }
 
+    if ($Action eq 'reset' and $Disp{_1} eq '') { return (1, $_); }
+
     if ($Action eq 'tag' and $Disp{_1} eq '') {
       if ($Opts =~ /-(?:a|d|s)/) { return (1, MsgGen($_, @Args)); }
       else {
@@ -478,6 +491,7 @@ my sub TargetProc($$$) {
   undef $TargetReq
     if /^branch$/ and $Opts !~ /-(?:c|d|m)/
     or /^remote$/ and $Opts =~ /-v/
+    or /^reset$/  and $Opts =~ /--(?:soft|hard)/
     or /^tag$/    and $Opts =~ /-(?:l|n\d+)/;
 
   do { undef $TargetReq; $TargetBan = 'True'; }
@@ -595,6 +609,12 @@ if (local $_ = shift) {
     $Action = 'push';
     %Disp = (d => '-d', t => '--tags',  u => '-u');
     %Prio = (d => -1,   t => -1,        u => -1);
+  }
+  elsif (/^re$/) {
+    $Action = 'reset';
+    %Disp = (h => '--hard', s => '--soft',  _1 => '');
+    %Prio = (h => -2,       s => -1,        _1 => 0);
+    %Rstr = (h => '_',      s => '_', _1 => 's:h');
   }
   elsif (/^rm$/) {
     $Action = 'rm';
