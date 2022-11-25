@@ -1,17 +1,14 @@
 #!/bin/bash
 trap '{ KillSleep; exit; }' SIGTERM SIGINT EXIT
 
-# Features:
-# * single notification when multiple warnings are sent
-#   * needs changing stack tags
-
 # Issue-Tracker | TODO:
 # * currently only supports NVIDIA-GPUs via. `nvidia-smi`
 # * not sure how Ryzen-CPUs display in `sensors` - may break
 # * currently only checks for BAT0 in /sys/class/power_supply
 #   * will 'break' on multi-battery systems
-#
-# * Sensors[@]:35 | Smi[@]:10
+# Internal:
+# * potentially more efficient / portable solution:
+#   * Sensors[@]:35 | Smi[@]:10
 #   * break Sensors on =~ ^$
 
 Author='Nico Pareigis'
@@ -205,7 +202,7 @@ Exec() {
     # Send notification where applicable:
     (( ${Warn[b]} == 1 ))\
       && dunstify -u critical -h string:x-dunst-stack-tag:$Program-b\
-        'Bat: '$BatC'%'
+        'Battery: '$BatC'%'
     (( ${Warn[c]} == 1 ))\
       && dunstify -u critical -h string:x-dunst-stack-tag:$Program-c\
         'CPU: '$CMax'°C'
