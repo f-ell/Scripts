@@ -24,8 +24,10 @@ my sub Err {
   printf STDERR "$Program: %s\n", $_[1];
   exit($_[0]) if $_[0] > 0;
 }
+# Register signal handlers:
+@SIG{'INT','TERM'} = (sub { Err(130, 'caught interrupt.') }) x 2;
+
 my sub SigHandler { local $_ = shift;
-  Err(130, 'caught interrupt.') if /^INT|TERM$/;
   unless ($ErrM) {
     ($ErrC, $ErrM) = (1, 'no help available - '.$_[0])  if /^HelpErr$/;
     ($ErrC, $ErrM) = (1, 'illegal argument - '.$_[0])   if /^ArgErr$/;
@@ -41,8 +43,7 @@ my sub SigHandler { local $_ = shift;
     ($ErrC, $ErrM) = (4, 'dependency not met - '.$_[0]) if /^DepErr$/;
   }
   return if $Debug; Err($ErrC, $ErrM);
-} @SIG{'INT','TERM'} = (\&SigHandler) x 2;
-
+}
 my sub TargetErrHandler($$) {
   local $_  = shift;
   my $O     = shift;
@@ -56,6 +57,9 @@ my sub TargetErrHandler($$) {
   SigHandler($Err.'Err');
 }
 
+
+# Help subroutines
+# ----------------
 my sub D {
   return "    D
         Run $Program in debug mode. Print relevant information to STDOUT, but
@@ -254,6 +258,7 @@ my @Help = (
   cl, mv, pl, ps, re, rm, sh, st, sw,
   reb, rem, res, rev
 );
+
 my sub Help {
 print "NAME
     $Program - shorthands for git commands
@@ -284,10 +289,7 @@ DESCRIPTION
 
 OPTIONS
     In the following section, '=>' should be read as 'expands to'.\n";
-foreach (@Help) {
-  print;
-  print '';
-}
+print $_."\n" foreach @Help;
 print "EXIT STATUS
     0, on success
     1, on argument error
@@ -307,7 +309,7 @@ AUTHOR(S)
 }
 
 
-my $TargetOpt = ''; my $TargetReq = ''; my $TargetBan = '';
+my ($TargetOpt, $TargetReq, $TargetBan) = ('') x 3;
 my @Bans      = qw'f';
 my @Optional  = qw'c d i l s pl ps sh sw st reb';
 my @Requires  = qw'a b m t cl mv re rm rem res rev';
@@ -321,10 +323,10 @@ my @Requires  = qw'a b m t cl mv re rm rem res rev';
 # Help, Debug, Requires / Optional:
 if (local $_ = $ARGV[0]) {
   my $Help;
-  do { $Debug = 'True'; shift; } if /^D$/;
+  do { $Debug = 1; shift; } if /^D$/;
 
   if (local $_ = $ARGV[0] and /^(?:(?:-)?h|--help|-\?)$/) {
-    if ($Debug) {$Help = 'True'; }
+    if ($Debug) { $Help = 1; }
     else {
       do { Help();    exit(0); } if not $ARGV[1];
       do { print $_;  exit(0); } if local ($_) = grep(/^\s*$ARGV[1]\W/, @Help);
@@ -335,16 +337,16 @@ if (local $_ = $ARGV[0]) {
   Err(2, 'cannot debug help.')  if $Debug and $Help;
   Err(2, 'nothing to debug.')   if $Debug and not $ARGV[0];
 
-  foreach (@Bans)     { do { $TargetBan = 'True'; last; } if /^$ARGV[0]$/ };
-  foreach (@Optional) { do { $TargetOpt = 'True'; last; } if /^$ARGV[0]$/ };
-  foreach (@Requires) { do { $TargetReq = 'True'; last; } if /^$ARGV[0]$/ };
+  foreach (@Bans)     { do { $TargetBan = 1; last; } if /^$ARGV[0]$/ };
+  foreach (@Optional) { do { $TargetOpt = 1; last; } if /^$ARGV[0]$/ };
+  foreach (@Requires) { do { $TargetReq = 1; last; } if /^$ARGV[0]$/ };
 }
 
 
 # Option processing
 # -----------------
-my $Action  = ''; my $Opts = ''; my @Targets  = ();
-my %Disp    = (); my %Prio = (); my %Rstr     = (); my @Args;
+my ($Action, $Opts) = ('') x 2;
+my (@Args, @Targets, %Disp, %Prio, %Rstr) = (()) x 5;
 
 my sub Default() {
   $Action = 'status';
@@ -355,24 +357,21 @@ my sub OptProc($\%\%\%\@) {
   my $Action  = shift;  # action
   my $Opts    = '';     # internal optstring
   my $Verb    = '';     # verbatim optstring
-  my $rDisp   = shift;  # dispatch table
-  my $rPrio   = shift;  # priority hash
-  my $rRstr   = shift;  # restrict hash
-  my $rArgs   = shift;  # arguments
-  my %Disp = %$rDisp; my %Prio = %$rPrio;
-  my %Rstr = %$rRstr; my @Args = @$rArgs;
-  undef $rDisp; undef $rPrio; undef $rRstr; undef $rArgs;
+  my %Disp = %{+shift}; # dispatch table
+  my %Prio = %{+shift}; # priority hash
+  my %Rstr = %{+shift}; # restrict hash
+  my @Args = @{+shift}; # arguments
 
   # Helper subroutines:
   my sub MsgGen($\@) {
     my ($M1, $M2);
-    local $_ = shift; my $Args = shift;
+    local $_ = shift; my @Args = @{+shift};
 
-    unshift(@$Args, $_); s/"/\\"/g foreach @$Args;
-    join(' ', @$Args) =~ /^(.*?)(?:\s+%%\s+(.*?))?$/;
+    unshift(@Args, $_); s/"/\\"/g foreach @Args;
+    join(' ', @Args) =~ /^(.*?)(?:\s+%%\s+(.*?))?$/;
       $1 and $M1 = "-m \"$1\"" or $M1 = '';
       $2 and $M2 = "-m \"$2\"" or $M2 = '';
-    undef @$Args;
+    undef @Args;
     return $M1.' '.$M2;
   }
 
@@ -409,7 +408,7 @@ my sub OptProc($\%\%\%\@) {
     if ($Action eq 'tag' and $Disp{_1} eq '') {
       if ($Opts =~ /-(?:a|d|s)/) { return (1, MsgGen($_, @Args)); }
       else {
-        SigHandler('ArgErr', $_) if $_ !~ /\d+/ or grep(/a|d|s/, @Args);
+        SigHandler('ArgErr', $_) if not /\d+/ or grep(/a|d|s/, @Args);
         return (1, '-n'.$_);
       }
     }
@@ -417,14 +416,14 @@ my sub OptProc($\%\%\%\@) {
     return undef;
   }
 
-  my sub PrioSort(\%) { my $Hash = shift;
-    foreach (keys %$Hash) {
+  my sub PrioSort(\%) { my %Hash = %{+shift};
+    foreach (keys %Hash) {
       if (not $Prio{$_}) {
         do {  $Prio{$_} = 9; next; } if /^D$/;
               $Prio{$_} = 0;
       }
     }
-    sort { return -1 * ($Prio{$a} <=> $Prio{$b}); } keys %$Hash;
+    sort { return -1 * ($Prio{$a} <=> $Prio{$b}); } keys %Hash;
   }
 
   my sub RstrRemove($) { my $K = shift;
@@ -451,7 +450,7 @@ my sub OptProc($\%\%\%\@) {
     }
   }
 
-  # Actual processing:
+  # Processing:
   my $S = join(' ', @Args); $S =~ /((?<!%)%(?!%)(.+?)(?(?=(?<!%)%(?!%))%|$))/;
   if ($2) {
     $Verb = $2;
@@ -460,12 +459,12 @@ my sub OptProc($\%\%\%\@) {
   }
 
   while (local $_ = shift @Args) {
-    if ($Disp{$_}) {  # Processes static options
+    if ($Disp{$_}) {  # Process static options
       $Opts .= $Disp{$_}.' ';
       delete $Disp{$_};
       delete $Prio{$_} if $Prio{$_};
       RstrRemove($_);
-    } else {          # Processes dynamic option
+    } else {          # Process dynamic options
       my ($K, $V) = DynProc($_);
       $K and $Disp{'_'.$K} = $V or SigHandler('ArgErr', $_);
     }
@@ -494,7 +493,7 @@ my sub TargetProc($$$) {
     or /^reset$/  and $Opts =~ /--(?:soft|hard)/
     or /^tag$/    and $Opts =~ /-(?:l|n\d+)/;
 
-  do { undef $TargetReq; $TargetBan = 'True'; }
+  do { undef $TargetReq; $TargetBan = 1; }
     if /^(?:merge|rebase)$/ and $Opts =~ /--(?:abort|continue|quit)/
     or /^stash$/            and $Opts =~ /clear/;
 
@@ -533,9 +532,8 @@ my sub TargetProc($$$) {
     @Targets = '-';
   }
 
-  # Escape spaces:
-  s/ /\\ /g foreach @Targets;
-  return @Targets;
+  # Escape spaces and return:
+  s/ /\\ /g foreach @Targets; return @Targets;
 }
 
 
@@ -672,17 +670,29 @@ if (local $_ = shift) {
     Default();
   } else { SigHandler('ArgErr', $_); }
 
-  if (not /^--$/) { # Generate @Args
+  if (not /^--$/) {   # Generate @Args
     push(@Args, shift) until not @ARGV or $ARGV[0] eq '--';
   }
 
   $Opts     = OptProc($Action, %Disp, %Prio, %Rstr, @Args) if not $Opts;
   @Targets  = TargetProc($Action, $Opts, $TargetReq);
-} else { Default(); } # Got no arguments
+} else { Default(); } # No arguments passed
 
 
-# Exception handling
-# ------------------
+# Execution
+# ---------
+# Repository check:
+unless ($Action =~ /^(?:clone|init)$/) {
+  `git rev-parse --is-inside-git-dir 2>/dev/null` or SigHandler('RepoErr');
+}
+
+# String generation:
+my $Command = "git $Action $Opts -- @Targets";
+$Command =~ s/--\s//
+  if $Action =~ /merge/ and $Opts =~ /--(?:abort|continue|quit)/;
+$Command =~ s/\s+/ /g;
+
+# Edge-case early execution:
 unless ($Debug) {
   if ($Action eq 'status' and $Opts =~ /--ahead-behind/) {
     `git status --ahead-behind` =~ /(Your branch is .*\.)/;
@@ -690,24 +700,10 @@ unless ($Debug) {
   }
 }
 
-# Build command string
-# --------------------
-my $Command = "git $Action $Opts -- @Targets";
-$Command =~ s/--\s//
-  if $Action =~ /merge/ and $Opts =~ /--(?:abort|continue|quit)/;
-$Command =~ s/\s+/ /g;
-
-# Repository check
-# ----------------
-unless ($Debug or $Action =~ /^(?:clone|init)$/) {
-  `git rev-parse --is-inside-git-dir 2>/dev/null` or SigHandler('RepoErr');
-}
-
-# Debugging information / Git command execution
-# ---------------------------------------------
+# Debugging information / normal execution:
 if ($Debug) {
-  $TargetReq or $TargetReq = 'False';
-  $TargetOpt or $TargetOpt = 'False';
+  $TargetReq and $TargetReq = 'True' or $TargetReq = 'False';
+  $TargetOpt and $TargetOpt = 'True' or $TargetOpt = 'False';
   print "- DEBUG MODE -\nAction : $Action\nOpts   : $Opts\n";
   print "TargetReq : $TargetReq\nTargetOpt : $TargetOpt\nTarget(s) :";
   print "    $_" foreach @Targets;
