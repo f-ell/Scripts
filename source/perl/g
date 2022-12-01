@@ -364,14 +364,15 @@ my sub OptProc($\%\%\%\@) {
 
   # Helper subroutines:
   my sub MsgGen($\@) {
-    my ($M1, $M2);
-    local $_ = shift; my @Args = @{+shift};
+    my ($M1, $M2) = ('') x 2;
+    local $_ = shift; my $ArgRef = shift;
+    unshift(@$ArgRef, $_);
 
-    unshift(@Args, $_); s/"/\\"/g foreach @Args;
-    join(' ', @Args) =~ /^(.*?)(?:\s+%%\s+(.*?))?$/;
-      $1 and $M1 = "-m \"$1\"" or $M1 = '';
-      $2 and $M2 = "-m \"$2\"" or $M2 = '';
-    undef @Args;
+    s/"/\\"/g foreach @$ArgRef;
+    join(' ', @$ArgRef) =~ /^(.*?)(?:\s+%%\s+(.*?))?$/;
+      $1 and $M1 = "-m \"$1\"";
+      $2 and $M2 = "-m \"$2\"";
+    undef @$ArgRef;
     return $M1.' '.$M2;
   }
 
