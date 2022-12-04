@@ -7,13 +7,14 @@ use warnings; use strict; $\ = "\n";
 #     git-merge --ff, --no-ff
 #     git-commit -S | git-log --show-signature
 #     git-log rev ranges as dynamic
+#       * needs strict order to differentiate
+#       * digit-only hashes cannot be distinguished
 # Issue-tracker:
 # * dynamic opt for git-reset, restricts with s, h
 #   * has to restrict WITHOUT being removed from %Disp
 #   * loop over all, check if dyn present and process
 #   * $Dynrestrict to disallow all dynamics when static given
 # Internal:
-# * verify special restrict works with dynamic options
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
@@ -203,11 +204,12 @@ my sub sh {
 }
 my sub st {
   return "    st c
-    st u     [-- FILE...]
-    st [los] [-- REF...]
+    st u      [-- FILE...]
+    st [dlos] [-- STASHREF...]
         Shorthand for 'git stash', where
           'c' => clear
           'u' => push
+          'd' => drop
           'l' => list, default
           'o' => pop
           's' => show";
@@ -432,10 +434,8 @@ my sub OptProc($\%\%\%\@) {
     # * ignores priority for implicit cascade
     # * can be used for branch, merge, stash, remote
     # if ((%Rstr)[0] eq 'ALL') {
-    #   foreach (keys %Disp) {
-    #     next if /^(?:D|_\d+|$K)$/;
-    #     delete %Disp{$_};
-    #   }
+    #   foreach (keys %Disp) { delete %Disp{$_} if not /^(?:D|_\d+|$K)$/; }
+    #   return;
     # }
 
     return if not local $_ = $Rstr{$K};
@@ -494,6 +494,7 @@ my sub TargetProc($$$) {
     or /^reset$/  and $Opts =~ /--(?:soft|hard)/
     or /^tag$/    and $Opts =~ /-(?:l|n\d+)/;
 
+  # TODO: stash doesn't use required - separate test?
   do { undef $TargetReq; $TargetBan = 1; }
     if /^(?:merge|rebase)$/ and $Opts =~ /--(?:abort|continue|quit)/
     or /^stash$/            and $Opts =~ /clear/;
@@ -613,7 +614,7 @@ if (local $_ = shift) {
     $Action = 'reset';
     %Disp = (h => '--hard', s => '--soft',  _1 => '');
     %Prio = (h => -2,       s => -1,        _1 => 0);
-    %Rstr = (h => '_',      s => '_', _1 => 's:h');
+    %Rstr = (h => '_',      s => '_',       _1 => 's:h');
   }
   elsif (/^rm$/) {
     $Action = 'rm';
@@ -632,9 +633,12 @@ if (local $_ = shift) {
   }
   elsif (/^st$/) {
     $Action = 'stash';
-    %Disp = (c => 'clear',  l => 'list',  o => 'pop', u => 'push',  s => 'show');
-    %Prio = (c => 1,        l => 2,       o => 1,     u => 1,       s => 1);
-    %Rstr = (c => '_',      l => '_',     o => '_',   u => '_',     s => '_');
+    %Disp = (
+      c => 'clear',  d => 'drop', l => 'list',  o => 'pop', u => 'push',
+      s => 'show'
+    );
+    %Prio = (c => 1,    d => 1,   l => 2,   o => 1,   u => 1,   s => 1);
+    %Rstr = (c => '_',  d => '_', l => '_', o => '_', u => '_', s => '_');
   }
   elsif (/^sw$/) {
     $Action = 'switch';
