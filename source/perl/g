@@ -7,8 +7,7 @@ use warnings; use strict; $\ = "\n";
 #     git-merge --ff, --no-ff
 #     git-commit -S | git-log --show-signature
 #     git-log rev ranges as dynamic
-#       * needs strict order to differentiate
-#       * digit-only hashes cannot be distinguished
+#       * needs strict order to differentiate (digit-only hashes cause issues)
 # Issue-tracker:
 # * dynamic opt for git-reset, restricts with s, h
 #   * has to restrict WITHOUT being removed from %Disp
@@ -30,18 +29,19 @@ my sub Err {
 
 my sub SigHandler { local $_ = shift;
   unless ($ErrM) {
-    ($ErrC, $ErrM) = (1, 'no help available - '.$_[0])  if /^HelpErr$/;
-    ($ErrC, $ErrM) = (1, 'illegal argument - '.$_[0])   if /^ArgErr$/;
-    ($ErrC, $ErrM) = (1, 'no arguments allowed.')       if /^BanErr$/;
-    ($ErrC, $ErrM) = (2, 'missing branch name.')        if /^BranchErr$/;
-    ($ErrC, $ErrM) = (2, 'missing commit.')             if /^CommErr$/;
-    ($ErrC, $ErrM) = (2, 'missing filename.')           if /^FileErr$/;
-    ($ErrC, $ErrM) = (2, 'missing destination.')        if /^MvDErr$/;
-    ($ErrC, $ErrM) = (2, 'missing name.')               if /^NameErr$/;
-    ($ErrC, $ErrM) = (2, 'missing tagname.')            if /^TagErr$/;
-    ($ErrC, $ErrM) = (2, 'missing URL.')                if /^URLErr$/;
-    ($ErrC, $ErrM) = (3, 'not in a git repository.')    if /^RepoErr$/;
-    ($ErrC, $ErrM) = (4, 'dependency not met - '.$_[0]) if /^DepErr$/;
+    ($ErrC, $ErrM) = (  1, 'no help available - '.$_[0])  if /^HelpErr$/;
+    ($ErrC, $ErrM) = (  1, 'illegal argument - '.$_[0])   if /^ArgErr$/;
+    ($ErrC, $ErrM) = (  1, 'no arguments allowed.')       if /^BanErr$/;
+    ($ErrC, $ErrM) = (  2, 'missing branch name.')        if /^BranchErr$/;
+    ($ErrC, $ErrM) = (  2, 'missing commit.')             if /^CommErr$/;
+    ($ErrC, $ErrM) = (  2, 'missing filename.')           if /^FileErr$/;
+    ($ErrC, $ErrM) = (  2, 'missing destination.')        if /^MvDErr$/;
+    ($ErrC, $ErrM) = (  2, 'missing name.')               if /^NameErr$/;
+    ($ErrC, $ErrM) = (  2, 'missing tagname.')            if /^TagErr$/;
+    ($ErrC, $ErrM) = (  2, 'missing URL.')                if /^URLErr$/;
+    ($ErrC, $ErrM) = (  3, 'not in a git repository.')    if /^RepoErr$/;
+    ($ErrC, $ErrM) = (  4, 'dependency not met - '.$_[0]) if /^DepErr$/;
+    ($ErrC, $ErrM) = (130, 'execution aborted.')          if /^IntErr$/;
   }
   return if $Debug; Err($ErrC, $ErrM);
 }
@@ -320,7 +320,7 @@ my @Requires  = qw'a b m t cl mv re rm rem res rev';
 # Preliminary checks
 # ------------------
 # Dependencies:
-`git -v 2>/dev/null` or SigHandler('DepErr', 'git');
+`git --version 2>/dev/null` or SigHandler('DepErr', 'git');
 
 # Help, Debug, Requires / Optional:
 if (local $_ = $ARGV[0]) {
@@ -494,21 +494,11 @@ my sub TargetProc($$$) {
     or /^reset$/  and $Opts =~ /--(?:soft|hard)/
     or /^tag$/    and $Opts =~ /-(?:l|n\d+)/;
 
-  # TODO: stash doesn't use required - separate test?
-  do { undef $TargetReq; $TargetBan = 1; }
+  do { undef $TargetOpt; undef $TargetReq; $TargetBan = 1; }
     if /^(?:merge|rebase)$/ and $Opts =~ /--(?:abort|continue|quit)/
     or /^stash$/            and $Opts =~ /clear/;
 
   SigHandler('BanErr') if $TargetBan and @Targets;
-
-  if ($TargetReq) {
-    if (scalar @Targets == 1) {
-      SigHandler('MvDErr')  if /^mv$/;
-      SigHandler('URLErr')  if /^remote$/ and $Opts =~ /add|set-url/;
-      SigHandler('NameErr') if /^remote$/ and $Opts =~ /rename/;
-    }
-    elsif (not @Targets) { TargetErrHandler($_, $Opts); }
-  }
 
   # Edge-case handling:
   if (/^clone|remote$/) {
@@ -528,10 +518,19 @@ my sub TargetProc($$$) {
       printf 'Confirm non-cached, recursive removal (y/N): ';
       $Confirm = <STDIN>;
     }
-    SigHandler('INT') if $Confirm =~ /^(?:n)?\n$/i;
+    SigHandler('IntErr') if $Confirm =~ /^(?:n)?\n$/i;
   }
   elsif (/^switch$/ and not @Targets) {
     @Targets = '-';
+  }
+
+  if ($TargetReq) {
+    if (scalar @Targets == 1) {
+      SigHandler('MvDErr')  if /^mv$/;
+      SigHandler('URLErr')  if /^remote$/ and $Opts =~ /add|set-url/;
+      SigHandler('NameErr') if /^remote$/ and $Opts =~ /rename/;
+    }
+    elsif (not @Targets) { TargetErrHandler($_, $Opts); }
   }
 
   # Escape spaces and return:
