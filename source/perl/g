@@ -8,6 +8,8 @@ use warnings; use strict; $\ = "\n";
 #     git-commit -S | git-log --show-signature
 #     git-log rev ranges as dynamic
 #       * needs strict order to differentiate (digit-only hashes cause issues)
+#     git-switch implicitely add '-d' when provided with tag
+#       * requries TargetProc to be passed $Opts-ref or use external $Opts
 # Issue-tracker:
 # * dynamic opt for git-reset, restricts with s, h
 #   * has to restrict WITHOUT being removed from %Disp
@@ -511,8 +513,8 @@ my sub TargetProc($$$) {
       }
     }
   }
-  elsif (/^rm$/ and $Opts =~ /(?<!--cached)-r(?!--cached)/ and not $Debug) {
-    print STDERR "+---------+\n| WARNING |\n+---------+";
+  elsif (/^rm$/ and $Opts =~ /-r/ and $Opts !~ /--cached/ and not $Debug) {
+    print STDERR 'WARNING';
     my $Confirm = '';
     until ($Confirm =~ /^(?:y|n|\n)$/i) {
       printf 'Confirm non-cached, recursive removal (y/N): ';
