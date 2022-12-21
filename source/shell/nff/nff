@@ -114,10 +114,10 @@ AUTHOR(S)
 
 
 Warn() {
-  printf 'Warning: %s\n' "$1" 1>&2
+  printf '%s: %s\n' "$Program" "$1" 1>&2
 }
 Err() {
-  printf 'Error: %s\n' "$2" 1>&2
+  printf '%s: %s\n' "$Program" "$2" 1>&2
   [ $1 -gt 0 ] && exit $1
 }
 
@@ -125,13 +125,13 @@ Err() {
 unset SigInt DepErr VerWar DetErr DirErr ExlErr FnfWar
 SigHandler() {
   [ "$VerWar" = True ] && Warn "'$1' version ($2) is not verified to work."
-  [ "$FnfWar" = True ] && Warn "File not found '$1' - skipping."
-  [ "$DetErr" = True ] && Err 1 "Depth has to be a positive, non-zero integer."
-  [ "$DirErr" = True ] && Err 1 "Directory does not exist '$1'."
-  [ "$ExlErr" = True ] && Err 1 "Pattern File '$1' doesn't exist, isn't a file, or doesn't have read permissions."
-  [ "$FilErr" = True ] && Err 2 'No file to open.'
-  [ "$DepErr" = True ] && Err 3 "Dependency not met - $1."
-  [ "$SigInt" = True ] && Err 130 "Keyboard interrupt."
+  [ "$FnfWar" = True ] && Warn "file not found '$1' - skipping."
+  [ "$DetErr" = True ] && Err   1 "depth has to be a positive, non-zero integer."
+  [ "$DirErr" = True ] && Err   1 "directory does not exist '$1'."
+  [ "$ExlErr" = True ] && Err   1 "pattern file '$1' doesn't exist, isn't a file, or doesn't have read permissions."
+  [ "$FilErr" = True ] && Err   2 'no file to open.'
+  [ "$DepErr" = True ] && Err   3 "dependency not met - $1."
+  [ "$SigInt" = True ] && Err 130 "keyboard interrupt."
 }
 
 
@@ -255,7 +255,7 @@ while [ -n "$1" ]; do
       shift;;
 
     -*)
-      Err 1 "Invalid option '$1'";;
+      Err 1 "invalid option '$1'";;
 
     *)
       [ ! -d "$1" ] && DirErr=True SigHandler "$1"
@@ -272,6 +272,7 @@ if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$ExcludeFile" ]; the
   [ -n "$GitIgnore" ]       && ExcludeList="$ExcludeList$GitIgnore"
   [ -n "$ExcludePattern" ]  && ExcludeList="$ExcludeList$ExcludePattern"
 
+  # TODO: add this as '--ignore-file'
   if [ -n "$ExcludeFile" ]; then
     while IFS='' read -r File; do
       File=${File%/}
@@ -304,11 +305,6 @@ while [ -n "$ExpList" ]; do
   else
     Match=`$FdCmd -- "${ExpList%% / *}" "$Dir"`
   fi
-
-  # LEGACY:
-  # Match="`fd $ExcludeList -tf -H$Link -d$Depth -- "${ExpList%% / *}" "$Dir" \
-  #   | fzf -e -0 -1`"
-  #   # | $Finder $FinderOpts`"
 
   Exit=$?
   if [ "$Finder" = fzf ]; then
