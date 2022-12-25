@@ -1,7 +1,6 @@
 #!/bin/sh
 
 # * move (fzy) '-1' implementation into function
-# * Add $ExcludeFile as --ignore-file and update usage
 
 Authors='Nico Pareigis'
 Program=${0##*/}
@@ -45,8 +44,16 @@ OPTIONS
       lay between issuing the command and opening the desired file(s).
       Default search depth is 10.
 
-    -e, --exclude FILE
-      Use FILE containing patterns to exclude files and directories from search
+    -g, --no-git-ignore
+      $Program excludes any file / directory matching '.git*' that it encounters
+      during the search. Using this option prevents those matches from being re-
+      moved from search results.
+      Can be used in combination with patterns, specified either in a separate
+      file, or on the command line (see -e and -p respectively), to only show
+      specific git-related results.
+
+    -i, --ignore FILE
+      Use FILE containing patterns to ignore files and directories in search
       results. Patterns support globbing characters and should be separated by
       newlines. Avoid prefixing patterns with '**/', as that's how they are
       being matched internally and prefixing them as such would prevent exclu-
@@ -70,14 +77,6 @@ OPTIONS
       how the file is structured, as well as provide a sane default setup that
       can easily be expanded upon.
 
-    -g, --no-git-ignore
-      $Program excludes any file / directory matching '.git*' that it encounters
-      during the search. Using this option prevents those matches from being re-
-      moved from search results.
-      Can be used in combination with patterns, specified either in a separate
-      file, or on the command line (see -e and -p respectively), to only show
-      specific git-related results.
-
     -l
       Include symlinked files in search results (traverses symlinks).
 
@@ -100,9 +99,9 @@ EXIT STATUS
     130, on keyboard interrupt.
 
 DEPENDENCIES
-    fd            (tested with v8.3.2)
-    fzf | fzy     (tested with v0.30.0 | v1.0)
-    vi  | (n)vim  (any)
+    fd                (tested with v8.3.2)
+    fzf | fzy         (tested with v0.30.0 | v1.0)
+    vi  | vim | nvim  (any)
 
 VERSION
     $Version
@@ -122,13 +121,13 @@ Err() {
 }
 
 
-unset SigInt DepErr VerWar DetErr DirErr ExlErr FnfWar
+unset SigInt DepErr VerWar DetErr DirErr IgnErr FnfWar
 SigHandler() {
   [ "$VerWar" = True ] && Warn "'$1' version ($2) is not verified to work."
   [ "$FnfWar" = True ] && Warn "file not found '$1' - skipping."
   [ "$DetErr" = True ] && Err   1 "depth has to be a positive, non-zero integer."
   [ "$DirErr" = True ] && Err   1 "directory does not exist '$1'."
-  [ "$ExlErr" = True ] && Err   1 "pattern file '$1' doesn't exist, isn't a file, or doesn't have read permissions."
+  [ "$IgnErr" = True ] && Err   1 "pattern file '$1' doesn't exist, isn't a file, or doesn't have read permissions."
   [ "$FilErr" = True ] && Err   2 'no file to open.'
   [ "$DepErr" = True ] && Err   3 "dependency not met - $1."
   [ "$SigInt" = True ] && Err 130 "keyboard interrupt."
@@ -198,7 +197,7 @@ FzfOpts='-i -e --tiebreak=begin --reverse --prompt= --height=10 --no-color
 FzyOpts='--lines=10 --prompt='
 Depth=10
 Dir="$HOME"
-ExcludeFile="${0%/*}/exclude.nff"
+IgnoreFile="${0%/*}/exclude.nff"
 ExcludePattern=''
 Exp='. / '
 ExpList=''
@@ -225,14 +224,14 @@ while [ -n "$1" ]; do
       fi
       shift 2;;
 
-    -e|--exclude)
+    -i|--ignore)
       if [ "$2" = - ]; then
-        unset ExcludeFile
+        unset IgnoreFile
       else
         if [ ! -f "$2" ] || [ ! -r "$2" ]; then
-          ExlErr=True SigHandler "$2"
+          IgnErr=True SigHandler "$2"
         fi
-        ExcludeFile="$2"
+        IgnoreFile="$2"
       fi
       shift 2;;
 
@@ -266,22 +265,21 @@ done
 
 
 # Construct $ExcludeList including all files to ignore when searching
-if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$ExcludeFile" ]; then
+if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$IgnoreFile" ]; then
   ExcludeList='-E {'
 
   [ -n "$GitIgnore" ]       && ExcludeList="$ExcludeList$GitIgnore"
   [ -n "$ExcludePattern" ]  && ExcludeList="$ExcludeList$ExcludePattern"
 
-  # TODO: add this as '--ignore-file'
-  if [ -n "$ExcludeFile" ]; then
+  if [ -n "$IgnoreFile" ]; then
     while IFS='' read -r File; do
       File=${File%/}
       ExcludeList="$ExcludeList**/${File#*/},"
-    done < "$ExcludeFile"
+    done < "$IgnoreFile"
   fi
 
   ExcludeList="$ExcludeList}"
-  unset ExcludePattern ExcludeFile
+  unset ExcludePattern IgnoreFile
 fi
 
 
