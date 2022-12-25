@@ -1,12 +1,10 @@
 #!/bin/sh
 
-# * move (fzy) '-1' implementation into isolated function
-# * add -E option to use $EDITOR instead of the natively supported editors
-# * add option to overwrite default $FinderOpts
+# * option to overwrite default $FuzzyOpts?
 
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.3.1
+Version=0.3.2
 
 Usage() {
 printf "NAME
@@ -44,6 +42,9 @@ OPTIONS
       lay between issuing the command and opening the desired file(s).
       Default search depth is 10.
 
+    -E, --editor
+      Uses \$EDITOR instead of the internally calculated editor.
+
     -f, -zf
       Force zf as the fuzzy finder.
 
@@ -56,8 +57,8 @@ OPTIONS
       specific git-related results.
 
     -i, --ignore FILE
-      Use FILE containing patterns to ignore files and directories in search
-      results. Patterns support globbing characters and should be separated by
+      Use FILE containing patterns to ignore files and directories in search re-
+      esults. Patterns support globbing characters and should be separated by
       newlines. Avoid prefixing patterns with '**/', as that's how they are
       being matched internally and prefixing them as such would prevent exclu-
       sion of all files / directories that are first-hand children of DIR.
@@ -152,36 +153,57 @@ DepAllOf() { # all of $@ are present
 DepAnyOf() { # any of $@ is present
   for Dep in "$@"; do
     if command -v $Dep 1>/dev/null; then
-      Use=$Dep
+      Return=$Dep
       return 0
     fi
   done
   MissingDepCount=$((MissingDepCount+1))
 }
 
+GetEditor() { # determine editor
+  DepAnyOf nvim vim vi
+  [ -z $Return ] && MissingDeps="$MissingDeps, vi | (n)vim" \
+    || Editor=$Return
+  unset Return
+}
+GetFuzzy() {  # determine fuzzy finder
+  DepAnyOf fzf fzy zf
+  [ -z $Return ] && MissingDeps="$MissingDeps, fzf | fzy | zf" \
+    || Fuzzy=$Return
+  unset Return
+}
 
-### Dependency checks
-MissingDepCount=0; MissingDeps=''; Editor=''; Finder=''
-DepAllOf wc fd
-DepAnyOf nvim vim vi
-[ -z "$Use" ] && MissingDeps="$MissingDeps, vi | (n)vim"    || Editor=$Use
-DepAnyOf fzf fzy zf
-[ -z "$Use" ] && MissingDeps="$MissingDeps, fzf | fzy | zf" || Finder=$Use
-
-[ $MissingDepCount -gt 0 ] && DepErr=1 SigHandler "${MissingDeps#, }"
-unset Dep Use MissingDeps MissingDepCount
-
-
-### Dependency version checks
-# fd
-  FdCleanV=`fd --version`; FdCleanV=${FdCleanV#fd }
-  Sup=${FdCleanV#?.}; Sup=${Sup%.?}
-  FdV=${FdCleanV%%.*}; FdV=$FdV$Sup; FdV=$FdV${FdCleanV##*.}
-  [ $FdV -lt 832 ] && VerWrn=1 SigHandler fd $FdCleanV
-  unset FdCleanV FdV
-
+FdVC() { # fd version check
+  FdCV=`fd --version`; FdCV=${FdCV#fd }
+  Sup=${FdCV#?.}; Sup=${Sup%.?}
+  FdV=${FdCV%%.*}; FdV=$FdV$Sup; FdV=$FdV${FdCV##*.}
+  [ $FdV -lt 832 ] && VerWrn=1 SigHandler fd $FdCV
+  unset FdCV FdV Sup
+}
+FzfVC() { # fzf version check
+  FzfCV=`fzf --version`; FzfCV=${FzfCV% *}
+  Sup=${FzfCV#?.}; Sup=${Sup%.?}
+  FzfV=${FzfCV%%.*}; FzfV=$FzfV$Sup; FzfV=$FzfV${FzfCV##*.}
+  [ $FzfV -lt 0300 ] && VerWrn=1 SigHandler fzf $FzfCV
+  unset FzfCV FzfV Sup
+}
+FzyVC() { # fzy version check
+  FzyCV=`fzy --version`; FzyCV=${FzyCV#fzy }; FzyCV=${FzyCV% ©*}
+  Sup=${FzyCV#?.}
+  FzyV=${FzyCV%.?}$Sup
+  [ $FzyV -lt 10 ] && VerWrn=1 SigHandler fzy $FzyCV
+  unset FzyCV FzyV Sup
+}
+ZfVC() {  # zf version check
+  ZfCV=`zf --version`; ZfCV=${ZfCV#zf }; ZfCV=${ZfCV%% *}
+  ZfV=${ZfCV%.*}; ZfV=$ZfV${ZfCV#*.}
+  [ $ZfV -lt 5 ] && VerWrn=1 SigHandler zf $ZfCV
+  unset ZfCV ZfV
+}
 
 ### Argument processing
+Editor=''
+Fuzzy=''
 FzfOpts='-i -e --tiebreak=begin --reverse --prompt= --height=10 --no-color
   --no-info'
 FzyOpts='--lines=10 --prompt='
@@ -215,6 +237,10 @@ while [ -n "$1" ]; do
       fi
       shift 2;;
 
+    -E|--editor)
+      Editor=$EDITOR
+      shift;;
+
     -i|--ignore)
       if [ "$2" = - ]; then
         unset IgnoreFile
@@ -227,7 +253,7 @@ while [ -n "$1" ]; do
       shift 2;;
 
     -f|--zf)
-      Finder=zf
+      Fuzzy=zf
       shift;;
 
     -g|--no-git-ignore)
@@ -249,11 +275,11 @@ while [ -n "$1" ]; do
       exit 0;;
 
     -y|--fzy)
-      Finder=fzy
+      Fuzzy=fzy
       shift;;
 
     -z|--fzf)
-      Finder=fzf
+      Fuzzy=fzf
       shift;;
 
     -*)
@@ -267,33 +293,36 @@ while [ -n "$1" ]; do
 done
 
 
-# Fuzzy finder version checks and optstring
-if [ $Finder = fzf ]; then
-  FzfCleanV=`fzf --version`; FzfCleanV=${FzfCleanV% *}
-  Sup=${FzfCleanV#?.}; Sup=${Sup%.?}
-  FzfV=${FzfCleanV%%.*}; FzfV=$FzfV$Sup
-    FzfV=$FzfV${FzfCleanV##*.}
-  [ $FzfV -lt 0300 ] && VerWrn=1 SigHandler fzf $FzfCleanV
+### Dependency checks
+MissingDepCount=0; MissingDeps='';
+DepAllOf wc fd
 
-  FinderOpts="$FzfOpts"
-elif [ $Finder = fzy ]; then
-  FzyCleanV=`fzy --version`; FzyCleanV=${FzyCleanV#fzy }
-    FzyCleanV=${FzyCleanV% ©*}
-  Sup=${FzyCleanV#?.}
-  FzyV=${FzyCleanV%.?}$Sup
-  [ $FzyV -lt 10 ] && VerWrn=1 SigHandler fzy $FzyCleanV
+# set editor and fuzzy finder if not implied by arguments
+[ -z $Editor ]  && GetEditor
+[ -z $Fuzzy ]   && GetFuzzy
 
-  FinderOpts="$FzyOpts"
-else [ $Finder = zf ]
-  ZfCleanV=`zf --version`; ZfCleanV=${ZfCleanV#zf }; ZfCleanV=${ZfCleanV%% *}
-  ZfV=${ZfCleanV%.*}; ZfV=$ZfV${ZfCleanV#*.}
-  [ $ZfV -lt 5 ] && VerWrn=1 SigHandler zf $ZfCleanV
+[ $MissingDepCount -gt 0 ] && DepErr=1 SigHandler "${MissingDeps#, }"
+unset Dep MissingDeps MissingDepCount
 
-  FinderOpts="$ZfOpts"
+
+### Version checks
+# fd
+FdVC
+
+# fuzzy finder version and optstring
+if [ $Fuzzy = fzf ]; then
+  FzfVC
+  FuzzyOpts="$FzfOpts"
+elif [ $Fuzzy = fzy ]; then
+  FzyVC
+  FuzzyOpts="$FzyOpts"
+else [ $Fuzzy = zf ]
+  ZfVC
+  FuzzyOpts="$ZfOpts"
 fi
-unset FzfCleanV FzfV FzyCleanV FzyV ZfCleanV ZfV Sup FzfOpts FzyOpts ZfOpts
 
 
+### Execution
 # Construct $ExcludeList
 if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$IgnoreFile" ]; then
   ExcludeList='-E {'
@@ -314,24 +343,24 @@ fi
 
 
 # Construct $Files string
-OneFile=1
+SingleMatch=1
 Files=''
 FdCmd="fd $ExcludeList -tf -H$Link -d$Depth"
 
 [ -z "$ExpList" ] && ExpList="$Exp"
 while [ -n "$ExpList" ]; do
-  # Emulate fzf's '-1' behaviour for fzy
-  [ `$FdCmd --max-results 2 -- "${ExpList%% / *}" "$Dir" | wc -l` -ne 0 ] \
-    && OneFile=False || OneFile=1
+  # Emulate fzf's '-1' behaviour for other finders
+  [ `$FdCmd --max-results 2 -- "${ExpList%% / *}" "$Dir" | wc -l` -gt 1 ] \
+    && SingleMatch=0
 
-  if [ "$OneFile" = False ]; then
-    Match=`$FdCmd -- "${ExpList%% / *}" "$Dir" | $Finder $FinderOpts`
+  if [ $SingleMatch -eq 0 ]; then
+    Match=`$FdCmd -- "${ExpList%% / *}" "$Dir" | $Fuzzy $FuzzyOpts`
   else
     Match=`$FdCmd -- "${ExpList%% / *}" "$Dir"`
   fi
 
   Exit=$?
-  if [ "$Finder" = fzf ]; then
+  if [ "$Fuzzy" = fzf ]; then
     [ $Exit -eq 130 ] && SigInt=1 SigHandler
   else
     [ $Exit -eq 1 ]   && SigInt=1 SigHandler
