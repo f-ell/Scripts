@@ -1,6 +1,7 @@
 #!/bin/sh
 
-# * move (fzy) '-1' implementation into function
+# * move (fzy) '-1' implementation into isolated function
+# * add -E option to use $EDITOR instead of the natively supported editors
 
 Authors='Nico Pareigis'
 Program=${0##*/}
@@ -99,6 +100,10 @@ EXIT STATUS
     130, on keyboard interrupt.
 
 DEPENDENCIES
+    Coreutils:
+    wc                (any)
+
+    Other:
     fd                (tested with v8.3.2)
     fzf | fzy         (tested with v0.30.0 | v1.0)
     vi  | vim | nvim  (any)
@@ -112,29 +117,25 @@ AUTHOR(S)
 }
 
 
-Warn() {
-  printf '%s: %s\n' "$Program" "$1" 1>&2
-}
-Err() {
-  printf '%s: %s\n' "$Program" "$2" 1>&2
-  [ $1 -gt 0 ] && exit $1
-}
-
-
 unset SigInt DepErr VerWar DetErr DirErr IgnErr FnfWar
 SigHandler() {
-  [ "$VerWar" = True ] && Warn "'$1' version ($2) is not verified to work."
-  [ "$FnfWar" = True ] && Warn "file not found '$1' - skipping."
+  [ "$VerWar" = True ] && Err   0 "'$1' version ($2) is outdated and may not work."
+  [ "$FnfWar" = True ] && Err   0 "'$1' not found - skipping."
   [ "$DetErr" = True ] && Err   1 "depth has to be a positive, non-zero integer."
-  [ "$DirErr" = True ] && Err   1 "directory does not exist '$1'."
-  [ "$IgnErr" = True ] && Err   1 "pattern file '$1' doesn't exist, isn't a file, or doesn't have read permissions."
-  [ "$FilErr" = True ] && Err   2 'no file to open.'
+  [ "$DirErr" = True ] && Err   1 "directory '$1' does not exist."
+  [ "$IgnErr" = True ] && Err   1 "file '$1' doesn't exist, isn't a valid file, or doesn't have read permissions."
+  [ "$FilErr" = True ] && Err   2 'no valid file provided.'
   [ "$DepErr" = True ] && Err   3 "dependency not met - $1."
   [ "$SigInt" = True ] && Err 130 "keyboard interrupt."
 }
 
 
-DepAllOf() { # Checks if all dependencies in $@ are present
+### Helper functions
+Err() {
+  printf '%s: %s\n' "$Program" "$2" 1>&2
+  [ $1 -gt 0 ] && exit $1
+}
+DepAllOf() { # all of $@ are present
   for Dep in "$@"; do
     if ! command -v $Dep 1>/dev/null; then
       MissingDepCount=$((MissingDepCount+1))
@@ -142,8 +143,7 @@ DepAllOf() { # Checks if all dependencies in $@ are present
     fi
   done
 }
-
-DepAnyOf() { # Checks if any dependency in $@ is present
+DepAnyOf() { # any of $@ is present
   for Dep in "$@"; do
     if command -v $Dep 1>/dev/null; then
       Use=$Dep
@@ -154,9 +154,9 @@ DepAnyOf() { # Checks if any dependency in $@ is present
 }
 
 
-# Runs checks for required dependencies
+### Dependency checks
 MissingDepCount=0; MissingDeps=''; Editor=''; Finder=''
-DepAllOf fd
+DepAllOf wc fd
 DepAnyOf nvim vim vi
 [ -z "$Use" ] && MissingDeps="$MissingDeps, vi | (n)vim"  || Editor=$Use
 DepAnyOf fzf fzy
@@ -166,14 +166,14 @@ DepAnyOf fzf fzy
 unset Dep Use MissingDeps MissingDepCount
 
 
-# Runs version checks for all dependencies
-# Version check for fd
+### Dependency version checks
+# fd
   FdCleanV=`fd --version`; FdCleanV=${FdCleanV#fd }
   Sup=${FdCleanV#?.}; Sup=${Sup%.?}
   FdV=${FdCleanV%%.*}; FdV=$FdV$Sup; FdV=$FdV${FdCleanV##*.}
   [ $FdV -lt 832 ]   && VerWar=True SigHandler fd $FdCleanV
 
-# Version check for fuzzy finder
+# fuzzy finder
   if [ "$Finder" = fzf ]; then
     FzfCleanV=`fzf --version`; FzfCleanV=${FzfCleanV% *}
     Sup=${FzfCleanV#?.}; Sup=${Sup%.?}
@@ -191,7 +191,7 @@ unset Dep Use MissingDeps MissingDepCount
 unset FdCleanV FzfCleanV FzyCleanV FdV FzfV FzyV Sup
 
 
-# Argument processing
+### Argument processing
 FzfOpts='-i -e --tiebreak=begin --reverse --prompt= --height=10 --no-color
   --no-info'
 FzyOpts='--lines=10 --prompt='
@@ -264,7 +264,7 @@ while [ -n "$1" ]; do
 done
 
 
-# Construct $ExcludeList including all files to ignore when searching
+# Construct $ExcludeList
 if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$IgnoreFile" ]; then
   ExcludeList='-E {'
 
@@ -287,7 +287,7 @@ fi
 unset FzfOpts FzyOpts
 
 
-# Construct $Files string to be opened
+# Construct $Files string
 OneFile=True
 Files=''
 FdCmd="fd $ExcludeList -tf -H$Link -d$Depth"
@@ -295,7 +295,7 @@ FdCmd="fd $ExcludeList -tf -H$Link -d$Depth"
 [ -z "$ExpList" ] && ExpList="$Exp"
 while [ -n "$ExpList" ]; do
   # Emulate fzf's '-1' behaviour for fzy
-  [ `$FdCmd --max-results 2 -- "${ExpList%% / *}" "$Dir" | wc -l` -gt 1 ] \
+  [ `$FdCmd --max-results 2 -- "${ExpList%% / *}" "$Dir" | wc -l` -ne 0 ] \
     && OneFile=False || OneFile=True
 
   if [ "$OneFile" = False ]; then
@@ -321,5 +321,5 @@ while [ -n "$ExpList" ]; do
 done; Files="${Files% }"
 
 
-# Open files in $Editor
+# Open files
 [ -n "$Files" ] && $Editor $Files || FilErr=True SigHandler
