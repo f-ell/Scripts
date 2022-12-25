@@ -2,10 +2,11 @@
 
 # * move (fzy) '-1' implementation into isolated function
 # * add -E option to use $EDITOR instead of the natively supported editors
+# * add option to overwrite default $FinderOpts
 
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.3.0
+Version=0.3.1
 
 Usage() {
 printf "NAME
@@ -17,18 +18,16 @@ SYNOPSIS
 
 DESCRIPTION
     Recursively search through directories and select one or more files. The sel-
-    ected file(s) will be opened in either Vi, Vim, or NeoVim. Should more than
-    one of the aforementioned programs be installed, $Program will prioritize
-    them in reverse order. Optionally, specify a search directory and / or ex-
-    pression to be matched.
+    ected file(s) will be opened in either Vi, Vim, or NeoVim (ascending prior-
+    ity). Optionally, specify a search directory and/or expression to be matched.
 
     DIR specifies the directory to run $Program in; the default is \$HOME.
 
-    '-- EXP' allows the user to specify multiple search expressions / filenames
-    as a space-separated list. If $Program finds a file matching the expression
-    that file is added to a list; each file in the list will later be opened in
-    its own buffer. If a match only has a single candidate, this is done auto-
-    matically. Otherwise, fzf or fzy is used to interactively select a candidate.
+    '-- EXP' allows the user to specify multiple search expressions/filenames as
+    a space-separated list. If $Program finds a file matching the expression,
+    the file is added to a list that will be opened in the editor. If a match
+    only has a single candidate, this is done automatically. Otherwise, fzf,
+    fzy, or zf (descending priority) is used to interactively select a match.
 
     When using fzf as the fuzzy finder, part of the user's \$FZF_DEFAULT_OPTS may
     temporarily be overwritten.
@@ -44,6 +43,9 @@ OPTIONS
       deeply nested directory structures, but comes at the cost of a greater de-
       lay between issuing the command and opening the desired file(s).
       Default search depth is 10.
+
+    -f, -zf
+      Force zf as the fuzzy finder.
 
     -g, --no-git-ignore
       $Program excludes any file / directory matching '.git*' that it encounters
@@ -86,16 +88,20 @@ OPTIONS
       more than once.
       See -e for an example on proper PATTERN formatting.
 
+    -v, --version
+      Output version information and exit.
+
     -y, --fzy
-      Force fzy as the fuzzy finder. Without this, $Program will default to
-      using fzf, if both fzf and fzy are installed. No dependency or version
-      checks are performed for fzy when using this option.
+      Force fzy as the fuzzy finder.
+
+    -z, --fzf
+      Force fzf as the fuzzy finder
 
 EXIT STATUS
       0, on success.
       1, on option error.
-      2, when no file is found. Most likely caused by a poor EXP, accompanied by
-         a shallow search depth.
+      2, when no file is found. Most likely caused by a poor EXP and/or a
+         shallow search depth.
       3, on dependency error.
     130, on keyboard interrupt.
 
@@ -105,7 +111,7 @@ DEPENDENCIES
 
     Other:
     fd                (tested with v8.3.2)
-    fzf | fzy         (tested with v0.30.0 | v1.0)
+    fzf | fzy | zf    (tested with v0.30.0 | v1.0 | v0.5)
     vi  | vim | nvim  (any)
 
 VERSION
@@ -117,16 +123,16 @@ AUTHOR(S)
 }
 
 
-unset SigInt DepErr VerWar DetErr DirErr IgnErr FnfWar
+unset SigInt DepErr VerWrn DetErr DirErr IgnErr FnfWrn
 SigHandler() {
-  [ "$VerWar" = True ] && Err   0 "'$1' version ($2) is outdated and may not work."
-  [ "$FnfWar" = True ] && Err   0 "'$1' not found - skipping."
-  [ "$DetErr" = True ] && Err   1 "depth has to be a positive, non-zero integer."
-  [ "$DirErr" = True ] && Err   1 "directory '$1' does not exist."
-  [ "$IgnErr" = True ] && Err   1 "file '$1' doesn't exist, isn't a valid file, or doesn't have read permissions."
-  [ "$FilErr" = True ] && Err   2 'no valid file provided.'
-  [ "$DepErr" = True ] && Err   3 "dependency not met - $1."
-  [ "$SigInt" = True ] && Err 130 "keyboard interrupt."
+  [ "$VerWrn" = 1 ] && Err   0 "'$1' version ($2) is outdated and may not work."
+  [ "$FnfWrn" = 1 ] && Err   0 "'$1' not found - skipping."
+  [ "$DetErr" = 1 ] && Err   1 "depth has to be a positive, non-zero integer."
+  [ "$DirErr" = 1 ] && Err   1 "directory '$1' does not exist."
+  [ "$IgnErr" = 1 ] && Err   1 "file '$1' doesn't exist, isn't a valid file, or doesn't have read permissions."
+  [ "$FilErr" = 1 ] && Err   2 'no valid file provided.'
+  [ "$DepErr" = 1 ] && Err   3 "dependency not met - $1."
+  [ "$SigInt" = 1 ] && Err 130 "keyboard interrupt."
 }
 
 
@@ -158,11 +164,11 @@ DepAnyOf() { # any of $@ is present
 MissingDepCount=0; MissingDeps=''; Editor=''; Finder=''
 DepAllOf wc fd
 DepAnyOf nvim vim vi
-[ -z "$Use" ] && MissingDeps="$MissingDeps, vi | (n)vim"  || Editor=$Use
-DepAnyOf fzf fzy
-[ -z "$Use" ] && MissingDeps="$MissingDeps, fzf | fzy"    || Finder=$Use
+[ -z "$Use" ] && MissingDeps="$MissingDeps, vi | (n)vim"    || Editor=$Use
+DepAnyOf fzf fzy zf
+[ -z "$Use" ] && MissingDeps="$MissingDeps, fzf | fzy | zf" || Finder=$Use
 
-[ $MissingDepCount -gt 0 ] && DepErr=True SigHandler "${MissingDeps#, }"
+[ $MissingDepCount -gt 0 ] && DepErr=1 SigHandler "${MissingDeps#, }"
 unset Dep Use MissingDeps MissingDepCount
 
 
@@ -171,30 +177,15 @@ unset Dep Use MissingDeps MissingDepCount
   FdCleanV=`fd --version`; FdCleanV=${FdCleanV#fd }
   Sup=${FdCleanV#?.}; Sup=${Sup%.?}
   FdV=${FdCleanV%%.*}; FdV=$FdV$Sup; FdV=$FdV${FdCleanV##*.}
-  [ $FdV -lt 832 ]   && VerWar=True SigHandler fd $FdCleanV
-
-# fuzzy finder
-  if [ "$Finder" = fzf ]; then
-    FzfCleanV=`fzf --version`; FzfCleanV=${FzfCleanV% *}
-    Sup=${FzfCleanV#?.}; Sup=${Sup%.?}
-    FzfV=${FzfCleanV%%.*}; FzfV=$FzfV$Sup
-      FzfV=$FzfV${FzfCleanV##*.}
-    [ $FzfV -lt 0300 ] && VerWar=True SigHandler fzf $FzfCleanV
-  else
-    FzyCleanV=`fzy --version`; FzyCleanV=${FzyCleanV#fzy }
-      FzyCleanV=${FzyCleanV% ©*}
-    Sup=${FzyCleanV#?.}
-    FzyV=${FzyCleanV%.?}$Sup
-    [ $FzyV -lt 10 ] && VerWar=True SigHandler fzy $FzyCleanV
-  fi
-
-unset FdCleanV FzfCleanV FzyCleanV FdV FzfV FzyV Sup
+  [ $FdV -lt 832 ] && VerWrn=1 SigHandler fd $FdCleanV
+  unset FdCleanV FdV
 
 
 ### Argument processing
 FzfOpts='-i -e --tiebreak=begin --reverse --prompt= --height=10 --no-color
   --no-info'
 FzyOpts='--lines=10 --prompt='
+ZfOpts='--lines 10'
 Depth=10
 Dir="$HOME"
 IgnoreFile="${0%/*}/exclude.nff"
@@ -220,7 +211,7 @@ while [ -n "$1" ]; do
       if [ $2 -eq $2 ] 2>/dev/null && [ $2 -gt 0 ]; then
         Depth=$2
       else
-        DetErr=True SigHandler
+        DetErr=1 SigHandler
       fi
       shift 2;;
 
@@ -229,11 +220,15 @@ while [ -n "$1" ]; do
         unset IgnoreFile
       else
         if [ ! -f "$2" ] || [ ! -r "$2" ]; then
-          IgnErr=True SigHandler "$2"
+          IgnErr=1 SigHandler "$2"
         fi
         IgnoreFile="$2"
       fi
       shift 2;;
+
+    -f|--zf)
+      Finder=zf
+      shift;;
 
     -g|--no-git-ignore)
       unset GitIgnore
@@ -249,19 +244,54 @@ while [ -n "$1" ]; do
       unset Pattern
       shift 2;;
 
+    -v|--version)
+      printf "$Program $Version $Authors\n";
+      exit 0;;
+
     -y|--fzy)
       Finder=fzy
+      shift;;
+
+    -z|--fzf)
+      Finder=fzf
       shift;;
 
     -*)
       Err 1 "invalid option '$1'";;
 
     *)
-      [ ! -d "$1" ] && DirErr=True SigHandler "$1"
+      [ ! -d "$1" ] && DirErr=1 SigHandler "$1"
       Dir="$1"
       shift;;
   esac
 done
+
+
+# Fuzzy finder version checks and optstring
+if [ $Finder = fzf ]; then
+  FzfCleanV=`fzf --version`; FzfCleanV=${FzfCleanV% *}
+  Sup=${FzfCleanV#?.}; Sup=${Sup%.?}
+  FzfV=${FzfCleanV%%.*}; FzfV=$FzfV$Sup
+    FzfV=$FzfV${FzfCleanV##*.}
+  [ $FzfV -lt 0300 ] && VerWrn=1 SigHandler fzf $FzfCleanV
+
+  FinderOpts="$FzfOpts"
+elif [ $Finder = fzy ]; then
+  FzyCleanV=`fzy --version`; FzyCleanV=${FzyCleanV#fzy }
+    FzyCleanV=${FzyCleanV% ©*}
+  Sup=${FzyCleanV#?.}
+  FzyV=${FzyCleanV%.?}$Sup
+  [ $FzyV -lt 10 ] && VerWrn=1 SigHandler fzy $FzyCleanV
+
+  FinderOpts="$FzyOpts"
+else [ $Finder = zf ]
+  ZfCleanV=`zf --version`; ZfCleanV=${ZfCleanV#zf }; ZfCleanV=${ZfCleanV%% *}
+  ZfV=${ZfCleanV%.*}; ZfV=$ZfV${ZfCleanV#*.}
+  [ $ZfV -lt 5 ] && VerWrn=1 SigHandler zf $ZfCleanV
+
+  FinderOpts="$ZfOpts"
+fi
+unset FzfCleanV FzfV FzyCleanV FzyV ZfCleanV ZfV Sup FzfOpts FzyOpts ZfOpts
 
 
 # Construct $ExcludeList
@@ -283,12 +313,8 @@ if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$IgnoreFile" ]; then
 fi
 
 
-[ "$Finder" = fzf ] && FinderOpts="$FzfOpts" || FinderOpts="$FzyOpts"
-unset FzfOpts FzyOpts
-
-
 # Construct $Files string
-OneFile=True
+OneFile=1
 Files=''
 FdCmd="fd $ExcludeList -tf -H$Link -d$Depth"
 
@@ -296,7 +322,7 @@ FdCmd="fd $ExcludeList -tf -H$Link -d$Depth"
 while [ -n "$ExpList" ]; do
   # Emulate fzf's '-1' behaviour for fzy
   [ `$FdCmd --max-results 2 -- "${ExpList%% / *}" "$Dir" | wc -l` -ne 0 ] \
-    && OneFile=False || OneFile=True
+    && OneFile=False || OneFile=1
 
   if [ "$OneFile" = False ]; then
     Match=`$FdCmd -- "${ExpList%% / *}" "$Dir" | $Finder $FinderOpts`
@@ -306,14 +332,14 @@ while [ -n "$ExpList" ]; do
 
   Exit=$?
   if [ "$Finder" = fzf ]; then
-    [ $Exit -eq 130 ] && SigInt=True SigHandler
+    [ $Exit -eq 130 ] && SigInt=1 SigHandler
   else
-    [ $Exit -eq 1 ]   && SigInt=True SigHandler
+    [ $Exit -eq 1 ]   && SigInt=1 SigHandler
   fi
   unset Exit
 
   [ -n "$Match" ] && Files="$Files$Match " \
-    || FnfWar=True SigHandler ${ExpList%% / *}
+    || FnfWrn=1 SigHandler ${ExpList%% / *}
 
   [ "$ExpList" = "$Exp" ] && break
 
@@ -322,4 +348,4 @@ done; Files="${Files% }"
 
 
 # Open files
-[ -n "$Files" ] && $Editor $Files || FilErr=True SigHandler
+[ -n "$Files" ] && $Editor $Files || FilErr=1 SigHandler
