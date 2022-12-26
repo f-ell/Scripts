@@ -1,5 +1,3 @@
 exclude.nff
 .cache
 .local
-.mozilla
-.librewolf
