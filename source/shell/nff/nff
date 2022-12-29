@@ -119,11 +119,11 @@ AUTHOR(S)
 }
 
 
-unset SigInt DepErr VerWrn DetErr DirErr IgnErr FnfWrn
+unset VerWrn FnfWrn DptErr DepErr DirErr IgnErr SigInt
 SigHandler() {
   [ "$VerWrn" = 1 ] && Err   0 "'$1' version ($2) is outdated and may not work."
   [ "$FnfWrn" = 1 ] && Err   0 "'$1' not found - skipping."
-  [ "$DetErr" = 1 ] && Err   1 "depth has to be a positive, non-zero integer."
+  [ "$DptErr" = 1 ] && Err   1 "depth has to be a positive, non-zero integer."
   [ "$DirErr" = 1 ] && Err   1 "directory '$1' does not exist."
   [ "$IgnErr" = 1 ] && Err   1 "file '$1' doesn't exist, isn't a valid file, or doesn't have read permissions."
   [ "$FilErr" = 1 ] && Err   2 'no valid file provided.'
@@ -227,7 +227,7 @@ while [ -n "$1" ]; do
       if [ $2 -eq $2 ] 2>/dev/null && [ $2 -gt 0 ]; then
         Depth=$2
       else
-        DetErr=1 SigHandler
+        DptErr=1 SigHandler
       fi
       shift 2;;
 
@@ -353,13 +353,13 @@ while [ -n "$ExpList" ]; do
     Match=`$FdCmd -- "${ExpList%% / *}" "$Dir"`
   fi
 
-  Exit=$?
-  if [ "$Fuzzy" = fzf ]; then
-    [ $Exit -eq 130 ] && SigInt=1 SigHandler
-  else
-    [ $Exit -eq 1 ]   && SigInt=1 SigHandler
+  X=$?
+  if [ $X -ne 0 ]; then
+    [ $Fuzzy = fzf ] && [ $X -eq 130 ]  && SigInt=1 SigHandler
+    [ $X -eq 1 ]                        && SigInt=1 SigHandler
+    Err 2 'uncaught fuzzy finder error.'
   fi
-  unset Exit
+  unset X
 
   [ -n "$Match" ] && Files="$Files$Match " \
     || FnfWrn=1 SigHandler ${ExpList%% / *}
@@ -371,4 +371,4 @@ done; Files="${Files% }"
 
 
 # Open files
-[ -n "$Files" ] && $Editor $Files || FilErr=1 SigHandler
+[ -n "$Files" ] && $Editor $Files || FnfErr=1 SigHandler
