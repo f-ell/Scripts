@@ -1,7 +1,6 @@
 #!/usr/bin/perl
 use strict; use warnings; $\ = "\n";
 
-# Feature:
 # Issue Tracker:
 # * current option processing allows 's' and '-long'
 
@@ -11,10 +10,10 @@ my $Version   = '0.0.4';
 
 my $LType = 'i';
 my $LDir  = '/dev/disk/';
-use constant BYID       => 'by-id/';
-use constant BYUUID     => 'by-uuid/';
-use constant PROCMOUNT  => '/proc/mounts';
-use constant CONFHOME   => $ENV{XDG_CONFIG_HOME}.'/';
+use constant BYID     => 'by-id/';
+use constant BYUUID   => 'by-uuid/';
+use constant PROCMNT  => '/proc/mounts';
+use constant XDGCONF  => $ENV{XDG_CONFIG_HOME}.'/';
 
 
 my ($Clean, $UsbOnly) = ('f') x 2;
@@ -232,7 +231,7 @@ SigHandler('DevErr', $Dev) if not -b $Dev;
 
 
 # Check mountpoint:
-open(FH, '<', PROCMOUNT) or SigHandler('FOErr', PROCMOUNT);
+open(FH, '<', PROCMNT) or SigHandler('FOErr', PROCMNT);
   while (<FH>) {
     local @_ = split(' ');
     if ($_[0] eq $Dev) {
@@ -240,7 +239,7 @@ open(FH, '<', PROCMOUNT) or SigHandler('FOErr', PROCMOUNT);
       $MntPoint = $_[1];
     }
   }
-close(FH) or SigHandler('FCErr', PROCMOUNT);
+close(FH) or SigHandler('FCErr', PROCMNT);
 
 # Mount partition if necessary:
 if ($Mnt eq 't') {
@@ -257,13 +256,13 @@ else {
 
 # Try to find database:
 local $_;
-CONFHOME and $_ = CONFHOME or $_ = $ENV{HOME}.'/.config/';
+XDGCONF and $_ = XDGCONF or $_ = $ENV{HOME}.'/.config/';
 my $KpConf = $_.'KeePass/KeePass.config.xml';
 
 if ($DbF) { # Got '-- PATH'
   $DbF = $MntPoint.'/'.$DbF   if $DbF !~ /^(?:\.)\//;
 
-  # Throw error when passed non-existant path:
+  # Throw error when passed invalid path:
   SigHandler('DbFErr', $DbF)  if not -e $DbF;
 }
 else {      # Didn't get '-- PATH'
@@ -289,7 +288,7 @@ else {      # Didn't get '-- PATH'
     }
   }
 
-  # Try '$MntPoint/*.kdbx':
+  # Last ditch effort - try '$MntPoint/*.kdbx':
   if (not $DbF) {
     opendir(DH, $MntPoint) or SigHandler('DOErr', $MntPoint);
       local @_ = readdir DH;
@@ -304,7 +303,7 @@ SigHandler('DbEErr') if not $DbF;
 `keepass $DbF`;
 $? == 0 or SigHandler('KeeErr');
 
-# Unmount partition:
+# Unmount partition if needed:
 if ($FMnt eq 't' or $UMnt eq 't') {
   `udisksctl unmount -b $Dev` or SigHandler('UUErr')
 }
