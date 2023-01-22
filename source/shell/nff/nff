@@ -1,9 +1,9 @@
 #!/bin/sh
-# * option to overwrite default $FuzzyOpts?
+# * option to overwrite default $FuzzyOpts
 
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.3.2
+Version=0.3.3
 
 Usage() {
 printf "NAME
@@ -109,7 +109,7 @@ DEPENDENCIES
     Other:
     fd                (v8.3.2+)
     fzf | fzy | zf    (v0.30.0+ | v1.0+ | v0.5+)
-    vi  | vim | nvim  (any, not required with -E)
+    vi  | vim | nvim  (any, optional with -E)
 
 VERSION
     $Version
@@ -169,31 +169,34 @@ GetFuzzy() {  # determine fuzzy finder
 }
 
 FdVC() { # fd version check
-  FdCV=`fd --version`; FdCV=${FdCV#fd }
-  Sup=${FdCV#?.}; Sup=${Sup%.?}
-  FdV=${FdCV%%.*}; FdV=$FdV$Sup; FdV=$FdV${FdCV##*.}
-  [ $FdV -lt 832 ] && VerWrn=1 SigHandler fd $FdCV
-  unset FdCV FdV Sup
+  Ver=`fd --version`; Ver=${Ver#fd }
+  Major=${Ver%%.*}
+  Minor=${Ver#?.}; Minor=${Minor%.?}
+  Patch=${Ver##*.}
+  [ $Major$Minor$Patch -lt 832 ] && VerWrn=1 SigHandler fd $Ver
+  unset Ver Major Minor Patch
 }
 FzfVC() { # fzf version check
-  FzfCV=`fzf --version`; FzfCV=${FzfCV% *}
-  Sup=${FzfCV#?.}; Sup=${Sup%.?}
-  FzfV=${FzfCV%%.*}; FzfV=$FzfV$Sup; FzfV=$FzfV${FzfCV##*.}
-  [ $FzfV -lt 0300 ] && VerWrn=1 SigHandler fzf $FzfCV
-  unset FzfCV FzfV Sup
+  Ver=`fzf --version`; Ver=${Ver% *}
+  Major=${Ver%%.*}
+  Minor=${Ver#?.}; Minor=${Minor%.?}
+  Patch=${Ver##*.}
+  [ $Major$Minor$Patch -lt 300 ] && VerWrn=1 SigHandler fzf $Ver
+  unset Ver Major Minor Patch
 }
 FzyVC() { # fzy version check
-  FzyCV=`fzy --version`; FzyCV=${FzyCV#fzy }; FzyCV=${FzyCV% ©*}
-  Sup=${FzyCV#?.}
-  FzyV=${FzyCV%.?}$Sup
-  [ $FzyV -lt 10 ] && VerWrn=1 SigHandler fzy $FzyCV
-  unset FzyCV FzyV Sup
+  Ver=`fzy --version`; Ver=${Ver#fzy }; Ver=${Ver% ©*}
+  Major=${Ver%.?}
+  Minor=${Ver#?.}
+  [ $Major$Minor -lt 10 ] && VerWrn=1 SigHandler fzy $Ver
+  unset Ver Major Minor
 }
 ZfVC() {  # zf version check
-  ZfCV=`zf --version`; ZfCV=${ZfCV#zf }; ZfCV=${ZfCV%% *}
-  ZfV=${ZfCV%.*}; ZfV=$ZfV${ZfCV#*.}
-  [ $ZfV -lt 5 ] && VerWrn=1 SigHandler zf $ZfCV
-  unset ZfCV ZfV
+  Ver=`zf --version`; Ver=${Ver#zf }; Ver=${Ver%% *}
+  Major=${Ver%.?}
+  Minor=${Ver#?.}
+  [ $Major$Minor -lt 5 ] && VerWrn=1 SigHandler zf $Ver
+  unset Ver Major Minor
 }
 
 ### Argument processing
@@ -300,19 +303,14 @@ unset Dep MissingDeps MissingDepCount
 
 
 ### Version checks
-# fd
 FdVC
 
-# fuzzy finder version and optstring
 if [ $Fuzzy = fzf ]; then
-  FzfVC
-  FuzzyOpts="$FzfOpts"
+  FzfVC; FuzzyOpts="$FzfOpts"
 elif [ $Fuzzy = fzy ]; then
-  FzyVC
-  FuzzyOpts="$FzyOpts"
+  FzyVC; FuzzyOpts="$FzyOpts"
 else [ $Fuzzy = zf ]
-  ZfVC
-  FuzzyOpts="$ZfOpts"
+  ZfVC; FuzzyOpts="$ZfOpts"
 fi
 
 
@@ -370,5 +368,5 @@ while [ -n "$ExpList" ]; do
 done; Files="${Files% }"
 
 
-# Open files
+# Open editor
 [ -n "$Files" ] && $Editor $Files || FnfErr=1 SigHandler
