@@ -337,7 +337,7 @@ fi
 # Construct $Files string
 SingleMatch=1
 Files=''
-FdCmd="fd $ExcludeList -tf -H$Link -d$Depth"
+FdCmd="fd $ExcludeList -tf -H$Link -d$Depth -p"
 
 [ -z "$ExpList" ] && ExpList="$Exp"
 while [ -n "$ExpList" ]; do
