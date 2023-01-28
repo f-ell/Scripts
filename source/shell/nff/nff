@@ -1,9 +1,9 @@
 #!/bin/sh
-# * option to overwrite default $FuzzyOpts
+# * add option to overwrite default $FuzzyOpts
 
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.3.3
+Version=0.3.4
 
 Usage() {
 printf "NAME
@@ -168,35 +168,46 @@ GetFuzzy() {  # determine fuzzy finder
   unset Return
 }
 
+CheckSemanticVersion() {
+  Dep=$1; CurVer=$2; MinVer=$3
+  Major=${CurVer%%.*}
+  Minor=${CurVer#*.}; Minor=${Minor%.*}
+  Patch=${CurVer##*.}
+  [ $Major$Minor$Patch -lt $MinVer ] && VerWrn=1 SigHandler $Dep $CurVer
+  unset Dep CurVer MinVer Major Minor Patch
+}
+CheckMajorMinorVersion() {
+  Dep=$1; CurVer=$2; MinVer=$3
+  Major=${CurVer%.*}
+  Minor=${CurVer#*.}
+  [ $Major$Minor -lt $MinVer ] && VerWrn=1 SigHandler $Dep $CurVer
+  unset Dep CurVer MinVer
+}
+
 FdVC() { # fd version check
-  Ver=`fd --version`; Ver=${Ver#fd }
-  Major=${Ver%%.*}
-  Minor=${Ver#?.}; Minor=${Minor%.?}
-  Patch=${Ver##*.}
-  [ $Major$Minor$Patch -lt 832 ] && VerWrn=1 SigHandler fd $Ver
-  unset Ver Major Minor Patch
+  Ver=`fd --version`
+  CheckSemanticVersion 'fd' ${Ver#fd } 832
+  unset Ver
 }
 FzfVC() { # fzf version check
-  Ver=`fzf --version`; Ver=${Ver% *}
-  Major=${Ver%%.*}
-  Minor=${Ver#?.}; Minor=${Minor%.?}
-  Patch=${Ver##*.}
-  [ $Major$Minor$Patch -lt 300 ] && VerWrn=1 SigHandler fzf $Ver
-  unset Ver Major Minor Patch
+  Ver=`fzf --version`
+  CheckSemanticVersion 'fzf' ${Ver% *} 0300
+  unset Ver
 }
 FzyVC() { # fzy version check
-  Ver=`fzy --version`; Ver=${Ver#fzy }; Ver=${Ver% ©*}
-  Major=${Ver%.?}
-  Minor=${Ver#?.}
-  [ $Major$Minor -lt 10 ] && VerWrn=1 SigHandler fzy $Ver
-  unset Ver Major Minor
+  Ver=`fzy --version`; Ver=${Ver#fzy }
+  CheckMajorMinorVersion 'fzy' ${Ver% ©*} 10
+  unset Ver
 }
 ZfVC() {  # zf version check
   Ver=`zf --version`; Ver=${Ver#zf }; Ver=${Ver%% *}
-  Major=${Ver%.?}
-  Minor=${Ver#?.}
-  [ $Major$Minor -lt 5 ] && VerWrn=1 SigHandler zf $Ver
-  unset Ver Major Minor
+
+  # compatibility with zf versions between 0.1.0 and 0.6.0
+  Compat=${Ver#*.}; Compat=${Compat%.*}
+  [ $Compat -gt 0 -a $Compat -le 5 ] \
+    && CheckMajorMinorVersion 'zf' $Ver 05 || CheckSemanticVersion 'zf' $Ver 060
+
+  unset Ver Compat
 }
 
 ### Argument processing
@@ -242,9 +253,7 @@ while [ -n "$1" ]; do
       if [ "$2" = - ]; then
         unset IgnoreFile
       else
-        if [ ! -f "$2" ] || [ ! -r "$2" ]; then
-          IgnErr=1 SigHandler "$2"
-        fi
+        [ ! -f "$2" -o ! -r "$2" ] && IgnErr=1 SigHandler "$2"
         IgnoreFile="$2"
       fi
       shift 2;;
@@ -316,7 +325,7 @@ fi
 
 ### Execution
 # Construct $ExcludeList
-if [ -n "$GitIgnore" ] || [ -n "$ExcludePattern" ] || [ -n "$IgnoreFile" ]; then
+if [ -n "$GitIgnore" -o -n "$ExcludePattern" -o -n "$IgnoreFile" ]; then
   ExcludeList='-E {'
 
   [ -n "$GitIgnore" ]       && ExcludeList="$ExcludeList$GitIgnore"
@@ -353,8 +362,8 @@ while [ -n "$ExpList" ]; do
 
   X=$?
   if [ $X -ne 0 ]; then
-    [ $Fuzzy = fzf ] && [ $X -eq 130 ]  && SigInt=1 SigHandler
-    [ $X -eq 1 ]                        && SigInt=1 SigHandler
+    [ $Fuzzy = fzf -a $X -eq 130 ]  && SigInt=1 SigHandler
+    [ $X -eq 1 ]                    && SigInt=1 SigHandler
     Err 2 'uncaught fuzzy finder error.'
   fi
   unset X
