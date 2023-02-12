@@ -6,10 +6,10 @@ use strict; use warnings; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.0.4';
+my $Version   = '0.0.5';
 
-my $LType = 'i';
-my $LDir  = '/dev/disk/';
+my $LUpType = 'i';
+my $LUpDir  = '/dev/disk/';
 use constant BYID     => 'by-id/';
 use constant BYUUID   => 'by-uuid/';
 use constant PROCMNT  => '/proc/mounts';
@@ -18,8 +18,8 @@ use constant XDGCONF  => $ENV{XDG_CONFIG_HOME}.'/';
 
 my ($Clean, $UsbOnly) = ('f') x 2;
 my ($Dev, $Uuid)      = ('')  x 2;
-my $Part      = 1;
-my $MTime     = 0;
+my $Part  = 1;
+my $MTime = 0;
 
 my ($Mnt, $FMnt)      = ('f') x 2;
 my $UMnt              = 't';
@@ -64,7 +64,8 @@ my sub SigHandler { local $_ = shift;
 } $SIG{INT} = sub { SigHandler('SigInt'); };
 
 my sub Help {
-print "NAME
+chomp(my $H = <<"EOF");
+NAME
     $Program - mount partition -> open KeePass database -> unmount partition
 
 SYNOPSIS
@@ -81,61 +82,69 @@ DESCRIPTION
     host filesystem, OR a path relative to the partition's mount point. For the
     latter, do NOT use leading path separators.
 
-    If PATH is omitted, $Program will try to iteratively match //LastUsedFile/
-    Path in \$XDG_CONFIG_HOME/KeePass/KeePass.config.xml to a file beneath the
-    mount point. As a last resort, it will look for any *.kdbx files directly
-    below the mount point and settle for the first one.
+    $Program looks at the 'LastUsedFile/Path' node in \$XDG_CONFIG_HOME/KeePass/
+    KeePass.config.xml to determine the database file. This is either done using
+    a XPath location path, or a regex, depending on whether XML::LibXML is
+    installed or not.
+
+    The resulting path is then iteratively matched against a valid filename
+    beneath the mount point. As a last resort, $Program will look for any *.kdbx
+    files directly below the mount point and settle for the first one.
 
 OPTIONS
-  -b | --blockdev DEV
-      Use DEV as the block device to mount, instead of the one that was most
-      recently mounted. DEV is assumed to reside in /dev.
-      (also see -u)
+    -b | --blockdev DEV
+        Use DEV as the block device to mount, instead of the one that was most
+        recently mounted. DEV is assumed to reside in /dev.
+        (also see -u)
 
-  -f | --force-unmount
-      $Program usually doesn't unmount partitions that were already mounted
-      when the script is run. With this option, $Program will always try to
-      unmount the partition holding the database.
-      (also see -n)
+    -f | --force-unmount
+        $Program usually doesn't unmount partitions that were already mounted
+        when the script is run. With this option, $Program will always try to
+        unmount the partition holding the database.
+        (also see -n)
 
-  -h | --help
-      Print this help information and exit.
+    -h | --help
+        Print this help information and exit.
 
-  -n | --no-unmount
-      Don't unmount partition after KeePass exits, even if not mounted
-      initially.
-      (also see -f)
+    -n | --no-unmount
+        Never try to unmount partition after KeePass exits, even if it wasn't
+        mounted initially.
+        (also see -f)
+  
+    -o | --only-usb
+        Only consider devices beginning with 'usb-' (see '/dev/disk/by-id/'
+        filename structure) when auto-detecting device and partition.
+        (ignored by -u)
 
-  -o | --only-usb
-      Only consider devices beginning with 'usb-' (see '/dev/disk/by-id/') when
-      auto-detecting device and partition.
-      (ignored by -u)
+    -p | --partition INT
+        Use INT as the partition number the database resides on.
+        (ignored by -u)
 
-  -p | --partition INT
-      Use INT as the partition number the database resides on.
-      (ignored by -u)
-
-  -u | --uuid UUID
-      Use UUID (NOT part-UUID) as the partition's UUID.
-      (also see -b, ignores -o and -p)
+    -u | --uuid UUID
+        Use UUID (NOT part-UUID) as the partition's UUID.
+        (also see -b, ignores -o and -p)
 
 EXIT STATUS
-    0, on success
-    1, on argument error
-    2, on mount error
-    3, on database|keepass error
-    7, on miscellaneous error
-  130, on keyboard interrupt
+      0, on success
+      1, on argument error
+      2, on mount error
+      3, on database|keepass error
+      7, on miscellaneous error
+    130, on keyboard interrupt
 
 DEPENDENCIES
-  keepass (any)
-  udisks2 (tested with v.2.9.4-1)
+    XML::LibXML (optional, used to grab database path if present)
+
+    keepass     (any)
+    udisks2     (tested with v.2.9.4-1)
 
 VERSION
-  $Version
+    $Version
 
 AUTHOR
-  $Author"; exit(0);
+    $Author
+EOF
+; print $H; exit(0);
 }
 
 
@@ -184,8 +193,8 @@ while (local $_ = shift) {
     $Part = $_;
   }
   elsif (/^u|uuid$/) {
-    $LType  = 'u';
-    $Uuid   = shift;
+    $LUpType = 'u';
+    $Uuid = shift;
   }
   elsif (/^$/) {
     $DbF = join(' ', @ARGV) if @ARGV; last;
@@ -195,30 +204,32 @@ while (local $_ = shift) {
 
 unless ($Dev) {
   # Set appropriate lookup directory:
-  if    ($LType eq 'i') { $LDir .= BYID; }
-  elsif ($LType eq 'u') { $LDir .= BYUUID; }
+  if    ($LUpType eq 'i') { $LUpDir .= BYID; }
+  elsif ($LUpType eq 'u') { $LUpDir .= BYUUID; }
 
-  opendir(DH, $LDir) or SigHandler('DOErr', $LDir);
+  opendir(DH, $LUpDir) or SigHandler('DOErr', $LUpDir);
     local @_ = readdir DH; splice(@_, 0, 2);
-  closedir(DH) or die SigHandler('DCErr', $LDir);
+  closedir(DH) or die SigHandler('DCErr', $LUpDir);
 
-  if ($LType eq 'i') {
+  if ($LUpType eq 'i') {
       # Get newest connected disk and relevant partition:
       foreach (@_) {
         next if /-part\d+$/ or ($UsbOnly eq 't' and not /^usb-/);
-        if ($MTime < (lstat $LDir.$_)[9]) {
-          (readlink $LDir.$_) =~ /([a-z0-9]*)$/;
-          $Dev    = '/dev/'.$1.$Part;
+        if ($MTime < (lstat $LUpDir.$_)[9]) {
+          (readlink $LUpDir.$_) =~ /([a-z0-9]*)$/;
+          $Dev  = '/dev/'.$1;
+          $Dev .= 'p' if /^nvme/;
+          $Dev .= $Part;
           $MTime  = (stat _)[9];
           # Speed up processing with large number of devices:
           last if time - $MTime < 10;
         }
       }
   }
-  elsif ($LType = 'u') {
+  elsif ($LUpType = 'u') {
     foreach (@_) {
       if (/^$Uuid$/i) {
-        (readlink $LDir.$_) =~ /([a-z0-9]*)$/;
+        (readlink $LUpDir.$_) =~ /([a-z0-9]*)$/;
         $Dev = '/dev/'.$1; last;
       }
     }
@@ -267,20 +278,28 @@ if ($DbF) { # Got '-- PATH'
 }
 else {      # Didn't get '-- PATH'
   undef local $/;
-  my $Content = '';
+  my ($Config, $Path) = ('') x 2;
 
-  # Try KeePass.config.xml's <LastUsedFile>:
+  # Try KeePass.config.xml's LastUsedFile:
   if (-f $KpConf) {
     open(FH, '<', $KpConf) or SigHandler('FOErr', $KpConf);
-      $Content = <FH>;
+      $Config = <FH>;
     close(FH) or SigHandler('FCErr', $KpConf);
   }
-  # TODO: consider switching to some XPath module to resolve path
-  $Content =~ m{<LastUsedFile>\n\s*<Path>(?:\.*/)*(.*?)</Path>}; undef $Content;
+
+  # Determine database path:
+  eval 'use XML::LibXML';
+  if (not $@) {
+    $Path = XML::LibXML->load_xml(string => $Config)->find('//LastUsedFile/Path');
+  } else {
+    ($Path) = $Config =~ m{<LastUsedFile>\n\s*<Path>(.*)</Path>};
+  }
+  $Path =~ s/^(?:\.{1,2}\/)*//;
+  undef $Config;
 
   # Iteratively try to match partial filename to existing database:
-  if ($1) {
-    local @_  = split('/', $1);
+  if ($Path) {
+    local @_  = split('/', $Path);
     my $Try   = '';
     foreach (reverse @_) {
       $Try = '/'.$_.$Try;
