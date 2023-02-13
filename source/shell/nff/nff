@@ -43,7 +43,7 @@ OPTIONS
     -E, --editor
       Uses \$EDITOR instead of the internally calculated editor.
 
-    -f, -zf
+    -f, --zf
       Use zf for fuzzy finding.
 
     -g, --no-git-ignore
