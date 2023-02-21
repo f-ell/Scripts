@@ -3,7 +3,7 @@
 
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.3.4
+Version=0.3.5
 
 Usage() {
 printf "NAME
@@ -211,19 +211,21 @@ ZfVC() {  # zf version check
 }
 
 ### Argument processing
+Depth=10
+Dir="$HOME"
+ExcludePattern=''
+Exp='. / '
+ExpList=''
+GitIgnore='**/.git*,'
+IgnoreFile="${0%/*}/exclude.nff"
+Ignore=''
+Link=''
+
 Editor=''
 Fuzzy=''
 FzfOpts='-i -e --tiebreak=begin --reverse --prompt= --height=10 --no-color --no-info'
 FzyOpts='--lines=10 --prompt='
 ZfOpts='--lines 10'
-Depth=10
-Dir="$HOME"
-IgnoreFile="${0%/*}/exclude.nff"
-ExcludePattern=''
-Exp='. / '
-ExpList=''
-GitIgnore='**/.git*,'
-Link=''
 
 while [ -n "$1" ]; do
   case "$1" in
@@ -252,6 +254,7 @@ while [ -n "$1" ]; do
     -i|--ignore)
       if [ "$2" = - ]; then
         unset IgnoreFile
+        Ignore='--no-ignore'
       else
         [ ! -f "$2" -o ! -r "$2" ] && IgnErr=1 SigHandler "$2"
         IgnoreFile="$2"
@@ -346,7 +349,7 @@ fi
 # Construct $Files string
 SingleMatch=1
 Files=''
-FdCmd="fd $ExcludeList -tf -H$Link -d$Depth -p"
+FdCmd="fd $ExcludeList -tf -H$Link $Ignore -d$Depth -p"
 
 [ -z "$ExpList" ] && ExpList="$Exp"
 while [ -n "$ExpList" ]; do
