@@ -1,9 +1,8 @@
 #!/bin/sh
-# * add option to overwrite default $FuzzyOpts
 
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.3.6
+Version=0.3.7
 
 Usage() {
 printf "NAME
@@ -28,10 +27,6 @@ DESCRIPTION
 
     When using fzf for fuzzy finding, part of the user's \$FZF_DEFAULT_OPTS may
     temporarily be overwritten.
-
-    NOTE:
-    Due to shell limitations, expressions / filenames containing spaces are
-    currently unsupported and should not be used!
 
 OPTIONS
     -d, --depth INT
@@ -80,6 +75,16 @@ OPTIONS
     -l
       Include symlinked files in search results (traverses symlinks).
 
+    -o, --fuzzy-opts STRING
+      Overwrite the builtin fuzzy-finder options with STRING. STRING is passed
+      to the finder verbatim, with no additional validity checks. Parsing will
+      break in case STRING contains characters that mess with word-splitting,
+      namely spaces.
+
+      EXAMPLE:
+      To use the environment's \$FZF_DEFAULT_OPTS with fzf, call $Program as:
+      '$Program [-z] -o \"\$FZF_DEFUALT_OPTS\"'
+
     -p, --pattern PATTERN
       Use PATTERN to exclude files / directories from being matched. Can be used
       more than once.
@@ -93,6 +98,14 @@ OPTIONS
 
     -z, --fzf
       Use fzf for fuzzy finding.
+
+KNOWN BUGS
+    Due to shell limitations, expressions / filenames containing spaces are not
+    handled properly and should be avoided.
+
+    Specifying an option right after an option that expects an argument assumes
+    that the second option is the argument to the first; the missing argument is
+    not detected.
 
 EXIT STATUS
       0, on success.
@@ -225,6 +238,7 @@ Link=''
 
 Editor=''
 Fuzzy=''
+FuzzyOpts=''
 FzfOpts='-i -e --tiebreak=begin --reverse --prompt= --height=10 --no-color --no-info'
 FzyOpts='--lines=10 --prompt='
 ZfOpts='--lines 10'
@@ -277,6 +291,11 @@ while [ -n "$1" ]; do
       Link=L
       shift;;
 
+    -o|--fuzzy-opts)
+      VerifyArg $1 $2
+      FuzzyOpts="$2"
+      shift 2;;
+
     -p|--pattern)
       VerifyArg $1 $2
       Pattern=${2%/}
@@ -323,11 +342,11 @@ unset Dep MissingDeps MissingDepCount
 FdVC
 
 if [ $Fuzzy = fzf ]; then
-  FzfVC; FuzzyOpts="$FzfOpts"
+  FzfVC; FuzzyOpts="${FuzzyOpts:-$FzfOpts}"
 elif [ $Fuzzy = fzy ]; then
-  FzyVC; FuzzyOpts="$FzyOpts"
+  FzyVC; FuzzyOpts="${FuzzyOpts:-$FzyOpts}"
 else [ $Fuzzy = zf ]
-  ZfVC; FuzzyOpts="$ZfOpts"
+  ZfVC; FuzzyOpts="${FuzzyOpts:-$ZfOpts}"
 fi
 
 
