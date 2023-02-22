@@ -3,7 +3,7 @@
 
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.3.5
+Version=0.3.6
 
 Usage() {
 printf "NAME
@@ -96,7 +96,7 @@ OPTIONS
 
 EXIT STATUS
       0, on success.
-      1, on option error.
+      1, on argument error.
       2, when no file is found. Most likely caused by a poor EXP and/or a
          shallow search depth.
       3, on dependency error.
@@ -119,16 +119,17 @@ AUTHOR(S)
 }
 
 
-unset VerWrn FnfWrn DptErr DepErr DirErr IgnErr SigInt
+unset VerWrn FnfWrn DirErr DptErr IgnErr NoAErr NoFErr DepErr SigInt
 SigHandler() {
   [ "$VerWrn" = 1 ] && Err   0 "'$1' version ($2) is outdated and may not work."
   [ "$FnfWrn" = 1 ] && Err   0 "'$1' not found - skipping."
-  [ "$DptErr" = 1 ] && Err   1 "depth has to be a positive, non-zero integer."
   [ "$DirErr" = 1 ] && Err   1 "directory '$1' does not exist."
+  [ "$DptErr" = 1 ] && Err   1 'depth has to be a positive, non-zero integer.'
   [ "$IgnErr" = 1 ] && Err   1 "file '$1' doesn't exist, isn't a valid file, or doesn't have read permissions."
-  [ "$FilErr" = 1 ] && Err   2 'no valid file provided.'
+  [ "$NoAErr" = 1 ] && Err   1 "missing argument for '$1'."
+  [ "$NoFErr" = 1 ] && Err   2 'nothing to edit.'
   [ "$DepErr" = 1 ] && Err   3 "dependency not met - $1."
-  [ "$SigInt" = 1 ] && Err 130 "keyboard interrupt."
+  [ "$SigInt" = 1 ] && Err 130 'keyboard interrupt.'
 }
 
 
@@ -137,6 +138,11 @@ Err() {
   printf '%s: %s\n' "$Program" "$2" 1>&2
   [ $1 -gt 0 ] && exit $1
 }
+
+VerifyArg() {
+  [ -z "$2" -o "$2" = -- ] && NoAErr=1 SigHandler $1
+}
+
 DepAllOf() { # all of $@ are present
   for Dep in "$@"; do
     if ! command -v $Dep 1>/dev/null; then
@@ -169,45 +175,41 @@ GetFuzzy() {  # determine fuzzy finder
 }
 
 CheckSemanticVersion() {
+  local Dep CurVer MinVer Major Minor Patch
   Dep=$1; CurVer=$2; MinVer=$3
   Major=${CurVer%%.*}
   Minor=${CurVer#*.}; Minor=${Minor%.*}
   Patch=${CurVer##*.}
   [ $Major$Minor$Patch -lt $MinVer ] && VerWrn=1 SigHandler $Dep $CurVer
-  unset Dep CurVer MinVer Major Minor Patch
 }
 CheckMajorMinorVersion() {
+  local Dep CurVer MinVer
   Dep=$1; CurVer=$2; MinVer=$3
   Major=${CurVer%.*}
   Minor=${CurVer#*.}
   [ $Major$Minor -lt $MinVer ] && VerWrn=1 SigHandler $Dep $CurVer
-  unset Dep CurVer MinVer
 }
 
 FdVC() { # fd version check
-  Ver=`fd --version`
+  local Ver=`fd --version`
   CheckSemanticVersion 'fd' ${Ver#fd } 832
-  unset Ver
 }
 FzfVC() { # fzf version check
-  Ver=`fzf --version`
+  local Ver=`fzf --version`
   CheckSemanticVersion 'fzf' ${Ver% *} 0300
-  unset Ver
 }
 FzyVC() { # fzy version check
-  Ver=`fzy --version`; Ver=${Ver#fzy }
+  local Ver=`fzy --version`; Ver=${Ver#fzy }
   CheckMajorMinorVersion 'fzy' ${Ver% ©*} 10
-  unset Ver
 }
 ZfVC() {  # zf version check
+  local Ver Compat
   Ver=`zf --version`; Ver=${Ver#zf }; Ver=${Ver%% *}
 
   # compatibility with zf versions between 0.1.0 and 0.6.0
   Compat=${Ver#*.}; Compat=${Compat%.*}
   [ $Compat -gt 0 -a $Compat -le 5 ] \
     && CheckMajorMinorVersion 'zf' $Ver 05 || CheckSemanticVersion 'zf' $Ver 060
-
-  unset Ver Compat
 }
 
 ### Argument processing
@@ -240,6 +242,7 @@ while [ -n "$1" ]; do
       Usage; exit 0;;
 
     -d|--depth)
+      VerifyArg $1 $2
       if [ $2 -eq $2 ] 2>/dev/null && [ $2 -gt 0 ]; then
         Depth=$2
       else
@@ -252,6 +255,7 @@ while [ -n "$1" ]; do
       shift;;
 
     -i|--ignore)
+      VerifyArg $1 $2
       if [ "$2" = - ]; then
         unset IgnoreFile
         Ignore='--no-ignore'
@@ -274,6 +278,7 @@ while [ -n "$1" ]; do
       shift;;
 
     -p|--pattern)
+      VerifyArg $1 $2
       Pattern=${2%/}
       ExcludePattern="$ExcludePattern**/${Pattern#*/},"
       unset Pattern
@@ -292,7 +297,7 @@ while [ -n "$1" ]; do
       shift;;
 
     -*)
-      Err 1 "invalid option - '$1'.";;
+      Err 1 "invalid argument - '$1'.";;
 
     *)
       [ ! -d "$1" ] && DirErr=1 SigHandler "$1"
@@ -331,6 +336,7 @@ fi
 if [ -n "$GitIgnore" -o -n "$ExcludePattern" -o -n "$IgnoreFile" ]; then
   ExcludeList='-E {'
 
+  # TODO: verify this doesn't break when providing both
   [ -n "$GitIgnore" ]       && ExcludeList="$ExcludeList$GitIgnore"
   [ -n "$ExcludePattern" ]  && ExcludeList="$ExcludeList$ExcludePattern"
 
@@ -367,7 +373,7 @@ while [ -n "$ExpList" ]; do
   if [ $X -ne 0 ]; then
     [ $Fuzzy = fzf -a $X -eq 130 ]  && SigInt=1 SigHandler
     [ $X -eq 1 ]                    && SigInt=1 SigHandler
-    Err 2 'uncaught fuzzy finder error.'
+    Err 130 'uncaught fuzzy finder error.'
   fi
   unset X
 
@@ -381,4 +387,4 @@ done; Files="${Files% }"
 
 
 # Open editor
-[ -n "$Files" ] && $Editor $Files || FnfErr=1 SigHandler
+[ -n "$Files" ] && $Editor $Files || NoFErr=1 SigHandler
