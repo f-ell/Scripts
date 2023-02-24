@@ -19,7 +19,7 @@ use warnings; use strict; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.1.8 - maintenance mode';
+my $Version   = '0.1.9-maintenance';
 
 my $Debug = ''; my $ErrM = ''; my $ErrC = 0;
 my sub Err {
@@ -315,8 +315,8 @@ AUTHOR(S)
 
 my ($TargetOpt, $TargetReq, $TargetBan) = ('') x 3;
 my @Bans      = qw'f';
-my @Optional  = qw'c d i l s pl ps sh sw st reb';
-my @Requires  = qw'a b m t cl mv re rm rem res rev';
+my @Optional  = qw'b c d i l s pl ps sh sw st reb';
+my @Requires  = qw'a m t cl mv re rm rem res rev';
 
 
 # Preliminary checks
@@ -485,16 +485,22 @@ my sub OptProc($\%\%\%\@) {
 my sub TargetProc($$$) {
   my $Action    = shift;
   my $Opts      = shift;
-  my $TargetReq = shift;
+  # my $TargetReq = shift;
   my @Targets   = @ARGV; shift @Targets if @Targets and $Targets[0] eq '--';
 
   local $_ = $Action;
   # Verify sufficient number of targets present:
-  undef $TargetReq
-    if /^branch$/ and $Opts !~ /-(?:c|d|m)/
-    or /^remote$/ and $Opts =~ /-v/
-    or /^reset$/  and $Opts =~ /--(?:soft|hard)/
-    or /^tag$/    and $Opts =~ /-(?:l|n\d+)/;
+
+  # TargetReq -> TargetOpt
+  do { undef $TargetReq; $TargetOpt = 1; }
+    if /^remote$/   and $Opts =~ /-v/
+      or /^reset$/  and $Opts =~ /--(?:soft|hard)/
+      or /^tag$/    and $Opts =~ /-(?:l|n\d+)/;
+
+  # TargetOpt -> TargetReq
+  do { undef $TargetOpt; $TargetReq = 1; }
+    if /^branch$/ and $Opts =~ /-(?:c|d|m)/
+      or /^push$/ and $Opts =~ /-d/;
 
   do { undef $TargetOpt; undef $TargetReq; $TargetBan = 1; }
     if /^(?:merge|rebase)$/ and $Opts =~ /--(?:abort|continue|quit)/
@@ -548,9 +554,9 @@ if (local $_ = shift) {
   }
   elsif (/^b$/) {
     $Action = 'branch';
-    %Disp = (a => '-a', c => '-c',  d => '-d',  m => '-m');
-    %Prio = (a => -1,   c => -2,    d => -2,    m => -2);
-    %Rstr = (a => '_',  c => '_',   d => '_',   m => '_');
+    %Disp = (a => '-a', c => '-c', d => '-d', m => '-m');
+    %Prio = (a => -1,   c => -2,   d => -2,   m => -2);
+    %Rstr = (a => '_',  c => '_',  d => '_',  m => '_');
   }
   elsif (/^c$/) {
     $Action = 'commit';
@@ -566,11 +572,11 @@ if (local $_ = shift) {
   elsif (/^l$/) {
     $Action = 'log';
     %Disp = (
-      D => '--abbrev-commit',  s => '--pretty=oneline',  l => '--pretty=medium',
-      n => '--name-only',     st => '--stat',           _1 => '-4'
+      D => '--abbrev-commit', s => '--pretty=oneline', l => '--pretty=medium',
+      n => '--name-only',    st => '--stat',          _1 => '-4'
     );
-    %Prio = (s => 2,    l => 1,   n => -1,    st => -1);
-    %Rstr = (s => 'l',  l => 's', n => 'st',  st => 'n');
+    %Prio = (s => 2,   l => 1,   n => -1,   st => -1);
+    %Rstr = (s => 'l', l => 's', n => 'st', st => 'n');
   }
   elsif (/^i$/) {
     $Action = 'init';
@@ -579,21 +585,21 @@ if (local $_ = shift) {
   }
   elsif (/^m$/) {
     $Action = 'merge';
-    %Disp = (a => '--abort',  c => '--continue',  q => '--quit', _1 => '');
-    %Prio = (a => -1,         c => -2,            q => -2);
-    %Rstr = (a => '_',        c => '_',           q => '_');
+    %Disp = (a => '--abort', c => '--continue', q => '--quit', _1 => '');
+    %Prio = (a => -1,        c => -2,           q => -2);
+    %Rstr = (a => '_',       c => '_',          q => '_');
   }
   elsif (/^s$/) {
     $Action = 'status';
-    %Disp = (s => '-s', l => '--long',  a => '--ahead-behind');
-    %Prio = (s => 2,    l => 1,         a => -1);
+    %Disp = (s => '-s', l => '--long', a => '--ahead-behind');
+    %Prio = (s => 2,    l => 1,        a => -1);
     %Rstr = (s => 'l',  l => 's');
   }
   elsif (/^t$/) {
     $Action = 'tag';
-    %Disp = (a => '-a',     d => '-d',    l => '-l',    s => '-s', _1 => '');
-    %Prio = (a => 1,        d => 1,       l => 2,       s => 1);
-    %Rstr = (a => 'd:l:s',  d => 'a:l:s', l => 'a:d:s', s => 'a:d:l');
+    %Disp = (a => '-a',    d => '-d',    l => '-l',    s => '-s', _1 => '');
+    %Prio = (a => 1,       d => 1,       l => 2,       s => 1);
+    %Rstr = (a => 'd:l:s', d => 'a:l:s', l => 'a:d:s', s => 'a:d:l');
   }
   elsif (/^cl$/) {
     $Action = 'clone';
@@ -602,20 +608,18 @@ if (local $_ = shift) {
   elsif (/^mv$/) { $Action = 'mv'; }
   elsif (/^pl$/) {
     $Action = 'pull';
-    %Disp = (n => '--no-rebase',  r => '--rebase');
-    %Prio = (n => -1,             r => -2);
-    %Rstr = (n => 'r',            r => 'n');
+    %Disp = (n => '--no-rebase', r => '--rebase');
+    %Prio = (n => -1,            r => -2);
+    %Rstr = (n => 'r',           r => 'n');
   }
   elsif (/^ps$/) {
     $Action = 'push';
-    %Disp = (d => '-d', t => '--tags',  u => '-u');
-    %Prio = (d => -1,   t => -1,        u => -1);
   }
   elsif (/^re$/) {
     $Action = 'reset';
-    %Disp = (h => '--hard', s => '--soft',  _1 => '');
-    %Prio = (h => -2,       s => -1,        _1 => 0);
-    %Rstr = (h => '_',      s => '_',       _1 => 's:h');
+    %Disp = (h => '--hard', s => '--soft', _1 => '');
+    %Prio = (h => -2,       s => -1,       _1 => 0);
+    %Rstr = (h => '_',      s => '_',      _1 => 's:h');
   }
   elsif (/^rm$/) {
     $Action = 'rm';
@@ -626,20 +630,20 @@ if (local $_ = shift) {
   elsif (/^sh$/) {
     $Action = 'show';
     %Disp = (
-      D => '--abbrev-commit', l => '--pretty=medium',  s => '--pretty=oneline',
+      D => '--abbrev-commit', l => '--pretty=medium', s => '--pretty=oneline',
       _1 => ''
     );
-    %Prio = (l => 1,    s => 2);
-    %Rstr = (l => 's',  s => 'l');
+    %Prio = (l => 1,   s => 2);
+    %Rstr = (l => 's', s => 'l');
   }
   elsif (/^st$/) {
     $Action = 'stash';
     %Disp = (
-      c => 'clear',  d => 'drop', l => 'list',  o => 'pop', u => 'push',
+      c => 'clear', d => 'drop', l => 'list', o => 'pop', u => 'push',
       s => 'show'
     );
-    %Prio = (c => 1,    d => 1,   l => 2,   o => 1,   u => 1,   s => 1);
-    %Rstr = (c => '_',  d => '_', l => '_', o => '_', u => '_', s => '_');
+    %Prio = (c => 1,   d => 1,   l => 2,   o => 1,   u => 1,   s => 1);
+    %Rstr = (c => '_', d => '_', l => '_', o => '_', u => '_', s => '_');
   }
   elsif (/^sw$/) {
     $Action = 'switch';
@@ -648,17 +652,17 @@ if (local $_ = shift) {
   }
   elsif (/^reb$/) {
     $Action = 'rebase';
-    %Disp = (a => '--abort',  c => '--continue',  i => '-i',    q => '--quit');
-    %Prio = (a => -1,         c => -2,            i => -1,      q => -2);
-    %Rstr = (a => 'c:i:q',    c => 'a:i:q',       i => 'a:c:q', q => 'a:c:i');
+    %Disp = (a => '--abort', c => '--continue', i => '-i',    q => '--quit');
+    %Prio = (a => -1,        c => -2,           i => -1,      q => -2);
+    %Rstr = (a => 'c:i:q',   c => 'a:i:q',      i => 'a:c:q', q => 'a:c:i');
   }
   elsif (/^rem$/) {
     $Action = 'remote';
     %Disp = (
       a => 'add', r => 'rename', R => 'rm', u => 'set-url', v => '-v show'
     );
-    %Prio = (a => 1,    r => 1,   R => 1,   u => 1,   v => 2);
-    %Rstr = (a => '_',  r => '_', R => '_', u => '_', v => '_');
+    %Prio = (a => 1,   r => 1,   R => 1,   u => 1,   v => 2);
+    %Rstr = (a => '_', r => '_', R => '_', u => '_', v => '_');
   }
   elsif (/^res$/) {
     $Action = 'restore';
