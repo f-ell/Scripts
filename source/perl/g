@@ -19,7 +19,7 @@ use warnings; use strict; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.1.9-maintenance';
+my $Version   = '0.2.0-maintenance';
 
 my $Debug = ''; my $ErrM = ''; my $ErrC = 0;
 my sub Err {
@@ -39,6 +39,7 @@ my sub SigHandler { local $_ = shift;
     ($ErrC, $ErrM) = (  2, 'missing filename.')           if /^FileErr$/;
     ($ErrC, $ErrM) = (  2, 'missing destination.')        if /^MvDErr$/;
     ($ErrC, $ErrM) = (  2, 'missing name.')               if /^NameErr$/;
+    ($ErrC, $ErrM) = (  2, 'missing refspec.')            if /^RefErr$/;
     ($ErrC, $ErrM) = (  2, 'missing tagname.')            if /^TagErr$/;
     ($ErrC, $ErrM) = (  2, 'missing URL.')                if /^URLErr$/;
     ($ErrC, $ErrM) = (  3, 'not in a git repository.')    if /^RepoErr$/;
@@ -55,6 +56,7 @@ my sub TargetErrHandler($$) {
   if    ((/^switch$/ and $O =~ /\Wd\W/) or /^revert$/)  { $Err = 'Comm'; }
   elsif (/^(?:branch|merge|rebase|switch)$/)            { $Err = 'Branch'; }
   elsif (/^clone$/)                                     { $Err = 'URL'; }
+  elsif (/^push$/)                                      { $Err = 'Ref'; }
   elsif (/^remote$/)                                    { $Err = 'Name'; }
   elsif (/^tag$/)                                       { $Err = 'Tag'; }
   SigHandler($Err.'Err');
@@ -176,8 +178,10 @@ my sub pl {
           'r' => --rebase";
 }
 my sub ps {
-  return "    ps [t] [du] [-- REPO [REF]]
+  return "    ps [at] [u] [-- REPO [REF]]
+    ps d [u] -- [REPO] REF
         Shorthand for 'git push', where
+          'a' => --all
           't' => --tags
           'd' => -d
           'u' => -u";
@@ -614,6 +618,9 @@ if (local $_ = shift) {
   }
   elsif (/^ps$/) {
     $Action = 'push';
+    %Disp = (a => '--all', d => '-d',  t => '--tags', u => '-u');
+    %Prio = (a => -1,      d => -1,    t => -1,       u => -1);
+    %Rstr = (a => 'd:t',   d => 'a:t', t => 'a:d')
   }
   elsif (/^re$/) {
     $Action = 'reset';
