@@ -19,7 +19,7 @@ use warnings; use strict; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.2.0-maintenance';
+my $Version   = '0.2.1-maintenance';
 
 my $Debug = ''; my $ErrM = ''; my $ErrC = 0;
 my sub Err {
@@ -77,9 +77,10 @@ my sub h {
         mation concerning that command. Subsequent arguments are discarded.";
 }
 my sub a {
-  return "    a [p] -- FILE...
+  return "    a [i] [p] -- FILE...
         Shorthand for 'git add', where
-          'p' => --patch";
+          'i' => -i
+          'p' => -p";
 }
 my sub b {
   return "    b [acdm] [-- BRANCH...]
@@ -497,7 +498,8 @@ my sub TargetProc($$$) {
 
   # TargetReq -> TargetOpt
   do { undef $TargetReq; $TargetOpt = 1; }
-    if /^remote$/   and $Opts =~ /-v/
+    if /^add$/      and $Opts =~ /-(?:i|p)/
+      or /^remote$/ and $Opts =~ /-v/
       or /^reset$/  and $Opts =~ /--(?:soft|hard)/
       or /^tag$/    and $Opts =~ /-(?:l|n\d+)/;
 
@@ -506,6 +508,7 @@ my sub TargetProc($$$) {
     if /^branch$/ and $Opts =~ /-(?:c|d|m)/
       or /^push$/ and $Opts =~ /-d/;
 
+  # * -> TargetBan
   do { undef $TargetOpt; undef $TargetReq; $TargetBan = 1; }
     if /^(?:merge|rebase)$/ and $Opts =~ /--(?:abort|continue|quit)/
     or /^stash$/            and $Opts =~ /clear/;
@@ -553,8 +556,8 @@ my sub TargetProc($$$) {
 if (local $_ = shift) {
   if (/^a$/) {
     $Action = 'add';
-    %Disp = (p => '--patch');
-    %Prio = (p => -1);
+    %Disp = (i => '-i', p => '-p');
+    %Prio = (i => -1,   p => -1);
   }
   elsif (/^b$/) {
     $Action = 'branch';
