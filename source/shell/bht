@@ -1,0 +1,138 @@
+#!/bin/bash
+Author='Nico Pareigis'
+Program=${0##*/}
+Version=0.0.1
+
+# features | TODO:
+# -m: multi-select -> exit on empty input, push selections to array
+
+PS3='> '
+declare -f err warn dep usage
+
+err() {
+  printf '%s: %s\n' $Program "$2"
+  (( $1 > 0 )) && exit $1
+}
+warn() {
+  printf '%s: %s\n' $Program "$1"
+}
+
+dep() {
+  local -i missing_c
+  local missing_d
+
+  for dep in "$@"; do
+    if ! command -v $dep 1>/dev/null; then
+      let missing_c++
+      missing_d="$missing_d, $dep"
+    fi
+  done
+
+  (( missing_c > 0 )) && err 2 "dependency not met - ${missing_d#, }"
+}
+
+usage() {
+  cat <<-EOF
+NAME
+    $Program - bspc .hidden toggle
+
+SYNOPSIS
+    $Program [OPTS] [QUERY]
+
+DESCRIPTION
+    Toggle the \`.hidden\` flag for selected node.
+
+    QUERY can be used to apply a filter to all candidate nodes. QUERY is regex-
+    matched (POSIX ERE) against both the node's WM_CLASS and WM_NAME. If neither
+    of them match QUERY, the node candidate is discarded.
+
+OPTIONS
+    -f, --focus
+      Focus the selected node. This will change desktops when the node is loc-
+      ated on a desktop other than the focused one.
+
+    -h, --help
+      Print this help information and exit.
+
+    -v, --visible
+      List visible nodes instead of hidden ones. The selected node will be tog-
+      gled hidden.
+
+EXIT STATUS
+    0, on success.
+    1, on argument error.
+    2, on dependency error.
+
+DEPENDENCIES
+    atomx (from wmutils)
+    bspc
+
+VERSION
+    $Version
+
+AUTHOR(S)
+    $Author
+EOF
+exit 0
+}
+
+
+# dependency checks
+dep atomx bspc
+
+
+# argument processing
+declare -i focus=0 hidden=1
+pattern=''
+while [[ -n $1 ]]; do
+  case $1 in
+    --) shift; break;;
+    -f|--focus) focus=1; shift;;
+    -h|--help) usage;;
+    -v|--visible) hidden=0; shift;;
+    -*) err 1 "invalid argument - '$1'";;
+     *) break;;
+  esac
+done
+[[ -n $@ ]] && pattern=$@
+echo $pattern
+
+
+# execution
+declare -a id node_info
+
+nodes=''
+case $hidden in
+  0) nodes=`bspc query -N -n .\!hidden`;;
+  1) nodes=`bspc query -N -n .hidden`;;
+esac
+
+
+for n in $nodes; do
+  class=`atomx WM_CLASS $n`
+  name=`atomx WM_NAME $n`
+  if [[ $class == '' || $name == '' ]]\
+  || [[ -n $pattern && ! ( $class =~ $pattern || $name =~ $pattern ) ]]; then
+    continue
+  fi
+
+  (( ${#class}  > 30 )) && class=${class:0:29}..
+  (( ${#name}   > 30 )) && name=${name:0:29}..
+
+  id+=($n)
+  node_info+=("$name - $class")
+done
+
+
+unset REPLY
+select n in "${node_info[@]}"; do
+  [[ $REPLY =~ ^[1-9][0-9]*$ ]]   || { warn 'expected positive integer.'; continue; }
+  (( $REPLY > ${#node_info[@]} )) && { warn 'integer out of range.'; continue; }
+  break
+done
+[[ -z $REPLY ]] && exit 0
+let --REPLY
+
+
+bspc node ${id[$REPLY]} -g hidden
+(( $focus == 1 )) && bspc node -f ${id[$REPLY]}
