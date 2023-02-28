@@ -1,14 +1,10 @@
 #!/bin/bash
 Author='Nico Pareigis'
 Program=${0##*/}
-Version=0.0.1
-
-# features | TODO:
-# -m: multi-select -> exit on empty input, push selections to array
-
+Version=0.0.2
 PS3='> '
-declare -f err warn dep usage
 
+declare -f err warn dep usage
 err() {
   printf '%s: %s\n' $Program "$2"
   (( $1 > 0 )) && exit $1
@@ -40,11 +36,12 @@ SYNOPSIS
     $Program [OPTS] [QUERY]
 
 DESCRIPTION
-    Toggle the \`.hidden\` flag for selected node.
+    Toggle the \`.hidden\` flag for selected node(s) (see -m|--multi).
+    The selection may be cancelled at any time by inputting a single dash ('-').
 
     QUERY can be used to apply a filter to all candidate nodes. QUERY is regex-
     matched (POSIX ERE) against both the node's WM_CLASS and WM_NAME. If neither
-    of them match QUERY, the node candidate is discarded.
+    of them match, the candidate is discarded.
 
 OPTIONS
     -f, --focus
@@ -54,9 +51,23 @@ OPTIONS
     -h, --help
       Print this help information and exit.
 
+    -m, --mutli
+      Enable multi-select mode.
+      The selection is re-run until
+        a) there are no more nodes left, or
+        b) the selection is cancelled (see DESCRIPTION).
+
+      When used in combination with -f, the node that's focused will be the one
+      that was selected last.
+
     -v, --visible
       List visible nodes instead of hidden ones. The selected node will be tog-
       gled hidden.
+
+KNOWN BUGS
+    When using -m, selecting the entry with index \`n\`, followed by the entry
+    with index \`m = n - 1\` will fail to (un)hide both nodes, due to internal
+    indexing.
 
 EXIT STATUS
     0, on success.
@@ -82,35 +93,35 @@ dep atomx bspc
 
 
 # argument processing
-declare -i focus=0 hidden=1
+declare -i focus=0 multi=0 hidden=1
 pattern=''
 while [[ -n $1 ]]; do
   case $1 in
     --) shift; break;;
     -f|--focus) focus=1; shift;;
     -h|--help) usage;;
+    -m|--mutli) multi=1; shift;;
     -v|--visible) hidden=0; shift;;
     -*) err 1 "invalid argument - '$1'";;
      *) break;;
   esac
 done
 [[ -n $@ ]] && pattern=$@
-echo $pattern
 
 
 # execution
-declare -a id node_info
-
-nodes=''
+query=''
 case $hidden in
-  0) nodes=`bspc query -N -n .\!hidden`;;
-  1) nodes=`bspc query -N -n .hidden`;;
+  0) query=`bspc query -N -n .\!hidden`;;
+  1) query=`bspc query -N -n .hidden`;;
 esac
 
 
-for n in $nodes; do
-  class=`atomx WM_CLASS $n`
-  name=`atomx WM_NAME $n`
+# build node id- and info-string-arrays
+declare -a id str
+for node in $query; do
+  class=`atomx WM_CLASS $node`
+  name=`atomx WM_NAME $node`
   if [[ $class == '' || $name == '' ]]\
   || [[ -n $pattern && ! ( $class =~ $pattern || $name =~ $pattern ) ]]; then
     continue
@@ -119,20 +130,52 @@ for n in $nodes; do
   (( ${#class}  > 30 )) && class=${class:0:29}..
   (( ${#name}   > 30 )) && name=${name:0:29}..
 
-  id+=($n)
-  node_info+=("$name - $class")
+  id+=($node)
+  str+=("$name - $class")
+done
+unset query
+
+
+# reverse input arrays for display in `select`
+declare -i min=0 max=$((${#id[@]} - 1))
+while (( min < max )); do
+  tmp_id=${id[$min]}
+  id[$min]=${id[$max]}
+  id[$max]=$tmp_id
+
+  tmp_str="${str[$min]}"
+  str[$min]="${str[$max]}"
+  str[$max]="$tmp_str"
+
+  let min++ max--
+done
+unset min max tmp_id tmp_str
+
+
+# select nodes to (un)hide
+declare -a indices
+declare -i iter=-1
+until (( ${#str[@]} == 0 )); do
+  unset REPLY
+  select node in "${str[@]}"; do
+    [[ $REPLY == - ]] && break 2
+    [[ $REPLY =~ ^[1-9][0-9]*$ ]]   || { warn 'expected positive integer.'; continue; }
+    (( $REPLY > ${#str[@]} )) && { warn 'integer out of range.'; continue; }
+
+    let REPLY-- iter++
+    indices+=( $((REPLY + iter)) )
+    unset str[$REPLY]
+
+    declare -a leftover=()
+    for i in ${!str[@]}; do leftover+=("${str[$i]}"); done
+    str=("${leftover[@]}")
+
+    (( $multi == 0 )) && break 2 || break
+  done
 done
 
+(( ${#indices[@]} == 0 )) && exit 0
 
-unset REPLY
-select n in "${node_info[@]}"; do
-  [[ $REPLY =~ ^[1-9][0-9]*$ ]]   || { warn 'expected positive integer.'; continue; }
-  (( $REPLY > ${#node_info[@]} )) && { warn 'integer out of range.'; continue; }
-  break
-done
-[[ -z $REPLY ]] && exit 0
-let --REPLY
-
-
-bspc node ${id[$REPLY]} -g hidden
-(( $focus == 1 )) && bspc node -f ${id[$REPLY]}
+# (un)hide nodes and focus if necessary
+for i in ${indices[@]}; do bspc node ${id[$i]} -g hidden; done
+(( $focus == 1 )) && bspc node -f ${id[${indices[-1]}]}
