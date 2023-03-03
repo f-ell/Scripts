@@ -14,7 +14,7 @@ case $1 in
   s) i=2;;
 esac
 
-[ -z $i ] && { $Bctl s 30%; exit; }
+[ -z $i ] && { $Bctl g; exit; }
 [ $i -eq 0 ] && { $Bctl s $Inc-%; exit; }
 [ $i -eq 1 ] && { $Bctl s +$Inc%; exit; }
 [ $i -eq 2 ] && { $Bctl s $Inc%; exit; }
