@@ -4,13 +4,10 @@ Program=${0##*/}
 Version=0.0.2
 PS3='> '
 
-declare -f err warn dep usage
+declare -f err dep usage
 err() {
-  printf '%s: %s\n' $Program "$2"
+  printf '%s: %s\n' $Program "$2" 1>&2
   (( $1 > 0 )) && exit $1
-}
-warn() {
-  printf '%s: %s\n' $Program "$1"
 }
 
 dep() {
@@ -159,8 +156,8 @@ until (( ${#str[@]} == 0 )); do
   unset REPLY
   select node in "${str[@]}"; do
     [[ $REPLY == - ]] && break 2
-    [[ $REPLY =~ ^[1-9][0-9]*$ ]]   || { warn 'expected positive integer.'; continue; }
-    (( $REPLY > ${#str[@]} )) && { warn 'integer out of range.'; continue; }
+    [[ $REPLY =~ ^[1-9][0-9]*$ ]]   || { err 0 'expected positive integer.'; continue; }
+    (( $REPLY > ${#str[@]} )) && { err 0 'integer out of range.'; continue; }
 
     let REPLY-- iter++
     indices+=( $((REPLY + iter)) )
