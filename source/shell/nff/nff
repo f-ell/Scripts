@@ -17,7 +17,7 @@ DESCRIPTION
     ected file(s) will be opened in either Vi, Vim, or NeoVim (ascending prior-
     ity). Optionally, specify a search directory and/or expression to be matched.
 
-    DIR specifies the directory to run $Program in; the default is \$HOME.
+    DIR specifies the directory to run $Program in; the default is \$PWD.
 
     '-- EXP' allows the user to specify multiple search expressions/filenames as
     a space-separated list. If $Program finds a file matching the expression,
@@ -227,7 +227,7 @@ ZfVC() {  # zf version check
 
 ### Argument processing
 Depth=10
-Dir="$HOME"
+Dir="$PWD"
 ExcludePattern=''
 Exp='. / '
 ExpList=''
