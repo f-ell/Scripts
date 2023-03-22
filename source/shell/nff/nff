@@ -2,7 +2,7 @@
 
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.3.7
+Version=0.3.8
 
 Usage() {
 printf "NAME
@@ -355,7 +355,6 @@ fi
 if [ -n "$GitIgnore" -o -n "$ExcludePattern" -o -n "$IgnoreFile" ]; then
   ExcludeList='-E {'
 
-  # TODO: verify this doesn't break when providing both
   [ -n "$GitIgnore" ]       && ExcludeList="$ExcludeList$GitIgnore"
   [ -n "$ExcludePattern" ]  && ExcludeList="$ExcludeList$ExcludePattern"
 
@@ -372,21 +371,17 @@ fi
 
 
 # Construct $Files string
-SingleMatch=1
 Files=''
 FdCmd="fd $ExcludeList -tf -H$Link $Ignore -d$Depth -p"
 
 [ -z "$ExpList" ] && ExpList="$Exp"
 while [ -n "$ExpList" ]; do
-  # Emulate fzf's '-1' behaviour for other finders
-  [ `$FdCmd --max-results 2 -- "${ExpList%% / *}" "$Dir" | wc -l` -gt 1 ] \
-    && SingleMatch=0
+  unset Match
+  Count=`$FdCmd --max-results 2 -- "${ExpList%% / *}" "$Dir" | wc -l`
 
-  if [ $SingleMatch -eq 0 ]; then
-    Match=`$FdCmd -- "${ExpList%% / *}" "$Dir" | $Fuzzy $FuzzyOpts`
-  else
-    Match=`$FdCmd -- "${ExpList%% / *}" "$Dir"`
-  fi
+  # Emulate fzf's '-1' behaviour for other finders
+  [ $Count -gt 1 ]\
+    && Match=`$FdCmd -- "${ExpList%% / *}" "$Dir" | $Fuzzy $FuzzyOpts`
 
   X=$?
   if [ $X -ne 0 ]; then
