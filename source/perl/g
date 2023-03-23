@@ -19,9 +19,9 @@ use warnings; use strict; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.2.1-maintenance';
+my $Version   = '0.2.2-maintenance';
 
-my $Debug = ''; my $ErrM = ''; my $ErrC = 0;
+my $Debug = ''; my $NoDefault = ''; my $ErrM = ''; my $ErrC = 0;
 my sub Err {
   printf STDERR "$Program: %s\n", $_[1];
   exit($_[0]) if $_[0] > 0;
@@ -69,6 +69,15 @@ my sub D {
   return "    D
         Run $Program in debug mode. Print relevant information to STDOUT, but
         don't run the actual git command.";
+}
+my sub N {
+  return "    N
+        Prevent processing all default options. Useful when using verbatim words
+        (see DESCRIPTION) that conflict with default options. The built-in short
+        options are still processed and can still be used alongside this.
+
+        NOTE: dynamic options can currenlty not be excluded (e.g. default
+        git-log limit '-4').";
 }
 my sub h {
   return "    [-]h [OPT]
@@ -263,7 +272,7 @@ my sub rev {
 }
 
 my @Help = (
-  D, h, a, b, c, d, f, i, l, _m, _s, t,
+  D, N, h, a, b, c, d, f, i, l, _m, _s, t,
   cl, mv, pl, ps, re, rm, sh, st, sw,
   reb, rem, res, rev
 );
@@ -284,14 +293,14 @@ DESCRIPTION
     add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
     rebase, remote, reset, restore, revert, rm, show, stash, status, switch, tag
 
-    $Program supports 'verbatim words' (vword), which are passed directly to Git
-    with no special treatment or checks. vwords can be used to access options
-    that are not natively supported. vwords should be prefixed with a '+'; each
-    of them is appended to the Git command's option string in the order they are
-    encountered.
+    $Program supports 'verbatim words' (vwords), which are passed directly to
+    Git with no special treatment or checks. vwords can be used to access Git
+    options that are not natively supported. vwords are prefixed with a '+';
+    each of them is appended to the Git command's option string in the
+    order they are encountered.
   
-    NOTE: vwords are not validated; they may clash with $Program\'s default
-    options.
+    NOTE:
+    vwords are not validated; they may clash with $Program\'s default options.
 
     When used alongside messages (commit, merge, tag), make sure to quote the
     message to avoid accidental interpretation of part of the message as a vword.
@@ -330,9 +339,10 @@ my @Requires  = qw'a m t cl mv re rm rem res rev';
 `git --version 2>/dev/null` or SigHandler('DepErr', 'git');
 
 # Help, Debug, Requires / Optional:
-if (local $_ = $ARGV[0]) {
+if (local $_ = $ARGV[0]) { # TODO: all special as $ARGV[0] and `for split ''`
   my $Help;
-  do { $Debug = 1; shift; } if /^D$/;
+  do { $Debug     = 1; shift; } if /^D$/;
+  do { $NoDefault = 1; shift; } if local $_ = $ARGV[0] and /^N$/;
 
   if (local $_ = $ARGV[0] and /^(?:(?:-)?h|--help|-\?)$/) {
     if ($Debug) { $Help = 1; }
@@ -385,6 +395,7 @@ my sub OptProc($\%\%\%\@) {
     return $M1.' '.$M2;
   }
 
+  # TODO: save dynamic options in separate hash
   my sub DynProc($) { local $_ = shift;
     if ($Action eq 'clone' and $Disp{_1} eq '' and /^\d+$/) {
       return (1, '--depth '.$_) 
@@ -459,16 +470,6 @@ my sub OptProc($\%\%\%\@) {
   }
 
   # Processing:
-  # TODO: deprecate
-  # my $S = join(' ', @Args);
-  # while ($S =~ /(\s+\+(\S+))/) {
-  #   if ($2) {
-  #     $Verb .= ' '.$2;
-  #     substr($S, index($S, $1), length $1) = '';
-  #   }
-  # }
-  # @Args = split(' ', $S);
-
   my $i = 0;
   while ($i <= $#Args) { local $_ = $Args[$i];
     if (/^\+\S+/) {
@@ -496,6 +497,7 @@ my sub OptProc($\%\%\%\@) {
 
   # Build option string through implicit cascade:
   foreach (PrioSort %Disp) {
+    next if $NoDefault and not /^_/;
     next if $Prio{$_} < 0 or not $Disp{$_};
     RstrRemove($_);
     $Opts .= $Disp{$_}.' ';
@@ -503,14 +505,11 @@ my sub OptProc($\%\%\%\@) {
   return $Opts.' '.$Verb;
 }
 
-my sub TargetProc($$$) {
+my sub TargetProc($$) {
   my $Action    = shift;
   my $Opts      = shift;
-  # my $TargetReq = shift;
   my @Targets   = @ARGV; shift @Targets if @Targets and $Targets[0] eq '--';
-
   local $_ = $Action;
-  # Verify sufficient number of targets present:
 
   # TargetReq -> TargetOpt
   do { undef $TargetReq; $TargetOpt = 1; }
@@ -711,7 +710,7 @@ if (local $_ = shift) {
   }
 
   $Opts     = OptProc($Action, %Disp, %Prio, %Rstr, @Args) if not $Opts;
-  @Targets  = TargetProc($Action, $Opts, $TargetReq);
+  @Targets  = TargetProc($Action, $Opts);
 } else { Default(); } # No arguments passed
 
 
