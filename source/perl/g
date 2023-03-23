@@ -284,17 +284,17 @@ DESCRIPTION
     add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
     rebase, remote, reset, restore, revert, rm, show, stash, status, switch, tag
 
-    $Program supports 'verbatim' strings - they are passed verbatim to Git to
-    provide access to options that are not natively supported. They are useable
-    in conjunction with $Program\'s builtin options.
-    A verbatim string is embedded by enclosing it in percent signs (%).
-    Omitting the second percent sign matches against '--' / EOL.
+    $Program supports 'verbatim words' (vword), which are passed directly to Git
+    with no special treatment or checks. vwords can be used to access options
+    that are not natively supported. vwords should be prefixed with a '+'; each
+    of them is appended to the Git command's option string in the order they are
+    encountered.
+  
+    NOTE: vwords are not validated; they may clash with $Program\'s default
+    options.
 
-    NOTE: Verbatim strings are not validated; they may clash with $Program\'s
-    default options.
-    When used alongside messages (commit, merge, tag), embed the string at the
-    very start, or the very end of the option string! Avoid using a literal '%'
-    inside of the messages, quoted or not!
+    When used alongside messages (commit, merge, tag), make sure to quote the
+    message to avoid accidental interpretation of part of the message as a vword.
 
 OPTIONS
     In the following section, '=>' should be read as 'expands to'.\n";
@@ -423,7 +423,7 @@ my sub OptProc($\%\%\%\@) {
       }
     }
 
-    return undef;
+    return (undef, undef);
   }
 
   my sub PrioSort(\%) { my %Hash = %{+shift};
@@ -459,12 +459,28 @@ my sub OptProc($\%\%\%\@) {
   }
 
   # Processing:
-  my $S = join(' ', @Args); $S =~ /((?<!%)%(?!%)(.+?)(?(?=(?<!%)%(?!%))%|$))/;
-  if ($2) {
-    $Verb = $2;
-    $S =~ s/$1//;
-    @Args = split(' ', $S);
+  # TODO: deprecate
+  # my $S = join(' ', @Args);
+  # while ($S =~ /(\s+\+(\S+))/) {
+  #   if ($2) {
+  #     $Verb .= ' '.$2;
+  #     substr($S, index($S, $1), length $1) = '';
+  #   }
+  # }
+  # @Args = split(' ', $S);
+
+  my $i = 0;
+  while ($i <= $#Args) { local $_ = $Args[$i];
+    if (/^\+\S+/) {
+      $Verb .= ' '.substr($_, 1);
+      delete $Args[$i];
+
+      my @Tmp = @Args[$i+1..$#Args];
+      splice @Args, $i;
+      @Args = (@Args, @Tmp);
+    } else { $i++; }
   }
+  undef $i;
 
   while (local $_ = shift @Args) {
     if ($Disp{$_}) {  # Process static options
@@ -710,7 +726,8 @@ unless ($Action =~ /^(?:clone|init)$/) {
 my $Command = "git $Action $Opts -- @Targets";
 $Command =~ s/--\s//
   if $Action =~ /merge/ and $Opts =~ /--(?:abort|continue|quit)/;
-$Command =~ s/\s+/ /g;
+$Command  =~ s/\s+/ /g;
+$Opts     =~ s/\s+/ /g;
 
 # Edge-case early execution:
 unless ($Debug) {
