@@ -380,16 +380,18 @@ while [ -n "$ExpList" ]; do
   Count=`$FdCmd --max-results 2 -- "${ExpList%% / *}" "$Dir" | wc -l`
 
   # Emulate fzf's '-1' behaviour for other finders
-  [ $Count -gt 1 ]\
-    && Match=`$FdCmd -- "${ExpList%% / *}" "$Dir" | $Fuzzy $FuzzyOpts`
-
-  X=$?
-  if [ $X -ne 0 ]; then
-    [ $Fuzzy = fzf -a $X -eq 130 ]  && SigInt=1 SigHandler
-    [ $X -eq 1 ]                    && SigInt=1 SigHandler
-    Err 130 'uncaught fuzzy finder error.'
+  if [ $Count -eq 1 ]; then
+    Match=`$FdCmd -- "${ExpList%% / *}" "$Dir"`
+  elif [ $Count -gt 1 ]; then
+    Match=`$FdCmd -- "${ExpList%% / *}" "$Dir" | $Fuzzy $FuzzyOpts`
+    X=$?
+    if [ $X -ne 0 ]; then
+      [ $Fuzzy = fzf -a $X -eq 130 ]  && SigInt=1 SigHandler
+      [ $X -eq 1 ]                    && SigInt=1 SigHandler
+      Err 130 'uncaught fuzzy finder error.'
+    fi
+    unset X
   fi
-  unset X
 
   [ -n "$Match" ] && Files="$Files$Match " \
     || FnfWrn=1 SigHandler ${ExpList%% / *}
