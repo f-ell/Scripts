@@ -3,13 +3,17 @@ use warnings; use strict;
 use feature 'current_sub';
 $" = ', ';
 
-# mvn-test-parser - works only with java maven projects
+# mvn-test-parser - test result parser for java maven projects
 
 # TODO:
 # * add documentation
-# * option for uncoloured output
-# * option for dump output, i.e. wait for mvn test to finish
-# * option for json output
+# * options
+#   * json output
+#   * dump output (i.e. wait for mvn to finish)
+#   * uncoloured output
+#   * omit failed test summary
+#   * omit tally
+#   * only tally
 
 my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
@@ -77,8 +81,8 @@ dep_check();
 find_mvn_root();
 
 # parse test output
-my ($PACK, $FILE) = ('')x2;
-my ($tt, $tf, $te, $ts) = (0)x4;
+my ($PACKAGE, $CLASS, $TIME, $BUILD) = ('')x4;
+my (@tally, @failed) = ()x2;
 
 open FH, '-|', 'mvn test 2>/dev/null' or err 1, 'failed to spawn \'mvn test\'';
 
@@ -86,19 +90,23 @@ while (<FH>) {
   next unless /^\[\w+\]/;
 
   if (/^\[INFO\] Running ([\w.]+)\.(\w+)$/) {
-    if ($1 ne $PACK) {
-      # print "\n" if $PACK;
-      $PACK = $1;
-      mvn 0, 'INF', 'Testing package '.$PACK;
+    if ($1 ne $PACKAGE) {
+      $PACKAGE = $1;
+      mvn 0, 'INF', 'Testing package '.$PACKAGE;
     }
-    $FILE = $2;
-    mvn 0, 'INF', 'Running '.$FILE;
+    $CLASS = $2;
+    mvn 0, 'INF', 'Running '.$CLASS;
   }
 
   if (/^\[(\w+)\] Tests run: (.*), Time elapsed:/) {
-    mvn 0, substr($1, 0, 3), $FILE.' results:';
+    mvn 0, substr($1, 0, 3), $CLASS.' results:';
     $2 =~ /^(\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)/;
     my ($t, $f, $e, $s) = ($1, $2, $3, $4);
+
+    my $i = 0;
+    $tally[$i++] += $_ foreach ($t, $f, $e, $s);
+    undef $i;
+
     print '  Ran     : ', $t, "\n";
     print '  Passed  : ', ($t - $e), "\n";
     print '  Failed  : ', $f, "\n";
@@ -106,25 +114,35 @@ while (<FH>) {
     print '  Skipped : ', $s, "\n";
   }
 
-  # FIX: push each test to array and eval after loop + include tally
   if (/^\[ERROR\] Errors:/) {
-    mvn 0, 'ERR', 'Failed tests:';
-    until (not local $_ = <FH>) {
+    while (local $_ = <FH>) {
       last if /^\[INFO\]/;
       /^\[ERROR\]\s+(\w+)\.(\w+)/;
-      print '  ', $1, ' -> ', $2, "\n";
+      push @failed, [$1, $2];
     }
   }
 
-  if (/^\[INFO\] BUILD (\w+)$/) {
-    my $sev = $1 =~ /^SUCCESS$/ ? 'INF' : 'ERR';
-    mvn 0, $sev, 'Build '.lc $1;
-  }
-
-  if (/^\[INFO\] Total time:\s+(.*)$/) {
-    mvn 0, 'INF', 'Took '.$1;
-  }
+  if (/^\[INFO\] BUILD (\w+)$/) { $BUILD = $1; }
+  if (/^\[INFO\] Total time:\s+(.*)$/) { $TIME = $1; }
 }
+
+# test summary
+mvn 0, 'INF', 'Summary';
+mvn 0, $tally[1] + $tally[2] == 0 ? 'INF' : 'ERR', 'Test summary:';
+print '  Ran     : ', $tally[0], "\n";
+print '  Passed  : ', $tally[0] - $tally[1] - $tally[2], "\n";
+print '  Failed  : ', $tally[1], "\n";
+print '  Errored : ', $tally[2], "\n";
+print '  Skipped : ', $tally[3], "\n";
+
+if (@failed) {
+  mvn 0, 'ERR', 'Failed tests:';
+  print '  ', $_->[0], ' -> ', $_->[1], "\n" foreach @failed;
+}
+
+my $sev = $BUILD =~ /^SUCCESS$/ ? 'INF' : 'ERR';
+mvn 0, $sev, 'Build '.lc $BUILD;
+mvn 0, 'INF', 'Time taken: '.$TIME;
 
 close FH or $? = $? == 256 ? 1 : $?;
 $? > 0 and mvn $?, 'ERR', 'Fatal: maven returned non-zero exit status';
