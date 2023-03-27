@@ -7,7 +7,6 @@ $" = ', ';
 # * options
 #   * json output
 #   * dump output (i.e. wait for mvn to finish)
-#   * uncoloured output
 #   * omit failed test summary
 #   * omit / only tally
 #   * only test results
@@ -17,6 +16,8 @@ my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
 my $version   = '0.0.3';
 
+my $COLOUR = 1;
+
 my sub err($$) { # exit_code, message
   printf STDERR "$program: %s\n", $_[1];
   exit($_[0]) if $_[0] > 0;
@@ -24,7 +25,7 @@ my sub err($$) { # exit_code, message
 
 my sub mvn($$$) { # exit_code, severity, message
   my $sev = uc $_[1];
-  printf STDOUT "[%s] %s\n", colored($sev, $sev), $_[2];
+  printf STDOUT "[%s] %s\n", $COLOUR ? colored($sev, $sev) : $sev, $_[2];
   exit($_[0]) if $_[0] > 0;
 }
 
@@ -46,6 +47,9 @@ my sub help {
       -h | --help
           Print help information and exit.
 
+      -n | --no-colour
+          Disable coloured output, makes Term::ANSIColor an optional dependency.
+
       -v | --version
           Print version information and exit.
 
@@ -60,7 +64,7 @@ my sub help {
 
       Modules:
       Cwd
-      Term::ANSIColor
+      Term::ANSIColor (optional with -n)
 
   VERSION
       $version
@@ -90,8 +94,15 @@ my sub mod_avail {
 
   eval 'use Cwd qw(chdir)';
   push @missing_deps, 'Cwd' if $@;
-  eval 'use Term::ANSIColor 4.00 qw(color colored coloralias)';
-  push @missing_deps, 'Term::ANSIColor' if $@;
+  if ($COLOUR) {
+    eval 'use Term::ANSIColor 4.00 qw(color colored coloralias)';
+    if ($@) {
+      push @missing_deps, 'Term::ANSIColor'
+    } else {
+      Term::ANSIColor::coloralias('INF', 'bold blue');
+      Term::ANSIColor::coloralias('ERR', 'bold red');
+    }
+  }
 
   err 1, "dependency not met - @missing_deps" if @missing_deps;
 }
@@ -99,8 +110,6 @@ my sub mod_avail {
 my sub dep_check {
   mvn_avail();
   mod_avail();
-  Term::ANSIColor::coloralias('INF', 'bold blue');
-  Term::ANSIColor::coloralias('ERR', 'bold red');
 }
 
 my sub find_mvn_root_rec($) { local $_ = shift;
@@ -128,6 +137,9 @@ while (local $_ = shift) {
 
   if (/^-h|--help$/) {
     help();
+  }
+  elsif (/^-n|--no-colour$/) {
+    $COLOUR = 0;
   }
   elsif (/^-v|--version$/) {
     version();
