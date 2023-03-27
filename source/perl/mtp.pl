@@ -93,7 +93,7 @@ my sub mod_avail {
   eval 'use Term::ANSIColor 4.00 qw(color colored coloralias)';
   push @missing_deps, 'Term::ANSIColor' if $@;
 
-  err 1, 'dependency not met - '.@missing_deps if @missing_deps;
+  err 1, "dependency not met - @missing_deps" if @missing_deps;
 }
 
 my sub dep_check {
