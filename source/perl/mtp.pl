@@ -3,21 +3,19 @@ use warnings; use strict;
 use feature 'current_sub';
 $" = ', ';
 
-# mvn-test-parser - test result parser for java maven projects
-
 # TODO:
-# * add documentation
 # * options
 #   * json output
 #   * dump output (i.e. wait for mvn to finish)
 #   * uncoloured output
 #   * omit failed test summary
-#   * omit tally
-#   * only tally
+#   * omit / only tally
+#   * only test results
+#   * override pom.xml location
 
 my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
-my $version   = 0.0.2;
+my $version   = '0.0.3';
 
 my sub err($$) { # exit_code, message
   printf STDERR "$program: %s\n", $_[1];
@@ -28,6 +26,54 @@ my sub mvn($$$) { # exit_code, severity, message
   my $sev = uc $_[1];
   printf STDOUT "[%s] %s\n", colored($sev, $sev), $_[2];
   exit($_[0]) if $_[0] > 0;
+}
+
+my sub help {
+  print <<~EOF
+  NAME
+      $program - `mvn test` parser
+
+  SYNOPSIS
+      $program [OPTS]
+
+  DESCRIPTION
+      $program parses maven's `test` output in an effort to reduce clutter and
+      visual noise, whilst improving the legibility of test results. To achieve
+      this, a not insignificant portion of the output is discarded, parts of
+      which may be deemed vital by some users.
+
+  OPTIONS
+      -h | --help
+          Print help information and exit.
+
+      -v | --version
+          Print version information and exit.
+
+  EXIT STATUS
+      0, on success.
+      1, on argument, dependency, or filesystem error.
+      2, on fatal maven error.
+
+  DEPENDENCIES
+      External:
+      mvn
+
+      Modules:
+      Cwd
+      Term::ANSIColor
+
+  VERSION
+      $version
+
+  AUTHOR(S)
+      $author
+  EOF
+  ; exit 0;
+}
+
+my sub version {
+  printf "%s %s %s\n", $program, $version, $author;
+  exit 0;
 }
 
 my sub mvn_avail {
@@ -47,7 +93,7 @@ my sub mod_avail {
   eval 'use Term::ANSIColor 4.00 qw(color colored coloralias)';
   push @missing_deps, 'Term::ANSIColor' if $@;
 
-  err 1, "dependency not met - @missing_deps" if @missing_deps;
+  err 1, 'dependency not met - '.@missing_deps if @missing_deps;
 }
 
 my sub dep_check {
@@ -74,6 +120,21 @@ my sub find_mvn_root {
   $cwd = find_mvn_root_rec($cwd);
   mvn 0, 'INF', 'Found maven root at '.$cwd;
   chdir $cwd;
+}
+
+# option processing
+while (local $_ = shift) {
+  last if /^--$/;
+
+  if (/^-h|--help$/) {
+    help();
+  }
+  elsif (/^-v|--version$/) {
+    version();
+  }
+  else {
+    err 1, 'illegal argument - '.$_;
+  }
 }
 
 # preliminary checks
