@@ -16,7 +16,7 @@ my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
 my $version   = '0.0.3';
 
-my $COLOUR = 1;
+my %OPTS = ( colour => 1 );
 
 my sub err($$) { # exit_code, message
   printf STDERR "$program: %s\n", $_[1];
@@ -25,7 +25,7 @@ my sub err($$) { # exit_code, message
 
 my sub mvn($$$) { # exit_code, severity, message
   my $sev = uc $_[1];
-  printf STDOUT "[%s] %s\n", $COLOUR ? colored($sev, $sev) : $sev, $_[2];
+  printf STDOUT "[%s] %s\n", $OPTS{colour} ? colored($sev, $sev) : $sev, $_[2];
   exit($_[0]) if $_[0] > 0;
 }
 
@@ -90,21 +90,23 @@ my sub mvn_avail {
 }
 
 my sub mod_avail {
-  my @missing_deps = ();
+  my @missing = ();
+  my @mods = (
+    { mod => 'Cwd', args => 'qw(chdir)' },
+    { mod => 'Term::ANSIColor',
+      cond => $OPTS{colour},
+      args => '4.00 qw(color colored coloralias)',
+      cb => sub { Term::ANSIColor::coloralias('INF', 'bold blue');
+        Term::ANSIColor::coloralias('ERR', 'bold red'); } }
+  );
 
-  eval 'use Cwd qw(chdir)';
-  push @missing_deps, 'Cwd' if $@;
-  if ($COLOUR) {
-    eval 'use Term::ANSIColor 4.00 qw(color colored coloralias)';
-    if ($@) {
-      push @missing_deps, 'Term::ANSIColor'
-    } else {
-      Term::ANSIColor::coloralias('INF', 'bold blue');
-      Term::ANSIColor::coloralias('ERR', 'bold red');
-    }
+  foreach (@mods) {
+    next if ($_->{cond} // 1) == 0;
+    eval 'use '.$_->{mod}.' '.($_->{args} // '');
+    $@ ? push @missing, $_->{mod} : (defined $_->{cb} and $_->{cb}());
   }
 
-  err 1, "dependency not met - @missing_deps" if @missing_deps;
+  err 1, "dependency not met - @missing" if @missing;
 }
 
 my sub dep_check {
@@ -139,7 +141,7 @@ while (local $_ = shift) {
     help();
   }
   elsif (/^-n|--no-colour$/) {
-    $COLOUR = 0;
+    $OPTS{colour} = 0;
   }
   elsif (/^-v|--version$/) {
     version();
