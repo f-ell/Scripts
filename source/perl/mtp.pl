@@ -5,18 +5,17 @@ $" = ', ';
 
 # TODO:
 # * options
-#   * omit failed test summary
+#   * fail control
+#   * offline mode
 #   * omit / only tally
-#   * only test results
-#   * override pom.xml location
 
 my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
-my $version   = '0.0.5';
+my $version   = '0.0.6';
 
 my %OPTS = ( colour => 1, json => 0, json_pretty => 0 );
 my %JSON = ();
-my ($PACKAGE, $CLASS) = ''x2;
+my ($PACKAGE, $CLASS) = ('')x2;
 
 my sub err($$) { # exit_code, message
   printf STDERR "$program: %s\n", $_[1];
@@ -29,19 +28,29 @@ my sub mvn($$$) { # exit_code, severity, message
   exit($_[0]) if $_[0] > 0;
 }
 
+my sub json {
+  print JSON::PP->new->pretty($OPTS{json_pretty})->encode(\%JSON);
+  exit $JSON{maven}{exitCode};
+}
+
 my sub help {
   print <<~EOF
   NAME
       $program - `mvn test` parser
 
   SYNOPSIS
-      $program [OPTS]
+      $program [OPTS] [DIR|FILE]
 
   DESCRIPTION
       $program parses maven's `test` output in an effort to reduce clutter and
       visual noise, whilst improving the legibility of test results. To achieve
       this, a not insignificant portion of the output is discarded, parts of
       which may be deemed vital by some users.
+
+      By default $program walks upwards the directory tree in an effort to find
+      a pom.xml file, starting from the working directory. DIR|FILE may be used
+      if maven is to be run in a different directory, or with a differently
+      named project file.
 
   OPTIONS
       -h | --help
@@ -122,24 +131,45 @@ my sub dep_check {
   mod_avail();
 }
 
+my sub validate_root($) {
+  my $root = shift;
+  if (-d $root) {
+    $root =~ s{/$}{};
+    not -f $root.'/pom.xml' and err 1, 'target directory does not contain pom.xml';
+    $JSON{maven}{rootDirectory} = Cwd::abs_path($root);
+  } elsif (-f $root) {
+    $root =~ s{/?([^/]+?)$}{};
+    $JSON{maven}{pomXml} = $1;
+    $JSON{maven}{rootDirectory} = Cwd::abs_path($root || '.');
+  } else {
+    err 1, 'target \''.$root.'\' does not exist'
+  }
+}
+
 my sub find_mvn_root_rec($) { local $_ = shift;
   if (m{^/$}) {
-    $OPTS{json} ? return undef : mvn 2, 'ERR', 'Fatal: No maven root found';
+    if ($OPTS{json}) {
+      $JSON{maven}{rootDirectory} = undef;
+      $JSON{maven}{exitCode} = 2;
+      json();
+    } else {
+      mvn 2, 'ERR', 'Fatal: No maven root found';
+    }
   }
 
   opendir DH, $_ or err 1, 'failed to open dirhandle \''.$_.'\'';
-    return $_ if grep /^pom\.xml$/, readdir DH;
+    return $_ if grep /^$JSON{maven}{pomXml}$/, readdir DH;
   closedir DH or err 1, 'failed to close dirhandle \''.$_.'\'';
 
-  $_ = Cwd::abs_path($_.'/..');
-  __SUB__->($_);
+  __SUB__->(Cwd::abs_path($_.'/..'));
 }
 
 my sub find_mvn_root {
-  $JSON{maven}{rootDirectory} = find_mvn_root_rec(Cwd::getcwd());
+  $JSON{maven}{pomXml} //= 'pom.xml';
+  $JSON{maven}{rootDirectory} //= find_mvn_root_rec(Cwd::getcwd());
+
   mvn 0, 'INF', 'Found maven root at '.$JSON{maven}{rootDirectory}
     if not $OPTS{json};
-  $JSON{maven}{rootDirectory} and chdir $JSON{maven}{rootDirectory};
 }
 
 my sub parse_package($$) {
@@ -153,6 +183,7 @@ my sub parse_tests($$) {
   $2 =~ /^(\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)/;
 
   my @keys = ( 'tests', 'fail', 'error', 'skip' );
+  # WARN: black magic ahead
   no strict 'refs';
   foreach (0..$#keys) {
     $JSON{testResults}{$PACKAGE}{$CLASS}{$keys[$_]} = ${$_+1};
@@ -207,9 +238,8 @@ my sub summary {
 }
 
 # option processing
+my $root;
 while (local $_ = shift) {
-  last if /^--$/;
-
   if (/^-h|--help$/) {
     help();
   }
@@ -225,17 +255,27 @@ while (local $_ = shift) {
   elsif (/^-v|--version$/) {
     version();
   }
-  else {
+  elsif (/^-{1,2}\w+/) {
     err 1, 'illegal argument - '.$_;
+  }
+  elsif (/^--$/) {
+    $root = shift if @ARGV;
+    last;
+  }
+  else {
+    $root = $_;
+    last;
   }
 }
 
 # preliminary checks
 dep_check();
+do { validate_root($root); undef $root; } if $root;
 find_mvn_root();
 
 # parse test output
-open my $FH, '-|', 'mvn test 2>/dev/null' or err 1, 'failed to spawn mvn';
+open my $FH, '-|', 'mvn test -f '.$JSON{maven}{rootDirectory}.'/'.$JSON{maven}{pomXml}.' 2>/dev/null'
+    or err 1, 'failed to spawn mvn';
   while (<$FH>) {
     next unless /^\[\w+\]/;
 
@@ -250,9 +290,9 @@ open my $FH, '-|', 'mvn test 2>/dev/null' or err 1, 'failed to spawn mvn';
 close $FH or $? = $? == 256 ? 1 : $?;
 $JSON{maven}{exitCode} = $?;
 
-if ($OPTS{json}) {
-  print JSON::PP->new->pretty($OPTS{json_pretty})->encode(\%JSON);
-} else {
-  mvn $JSON{maven}{exitCode}, 'ERR', 'Fatal: maven returned non-zero exit status'
-    if $JSON{maven}{exitCode} > 0;
-}
+$OPTS{json}
+  ? json()
+  : do {
+    mvn $JSON{maven}{exitCode}, 'ERR', 'Fatal: maven returned non-zero exit status'
+      if $JSON{maven}{exitCode} > 0;
+  };
