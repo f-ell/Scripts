@@ -11,7 +11,7 @@ $" = ', ';
 
 my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
-my $version   = '0.0.6';
+my $version   = '0.0.7';
 
 my %OPTS = ( colour => 1, json => 0, json_pretty => 0 );
 my %JSON = ();
@@ -240,31 +240,29 @@ my sub summary {
 # option processing
 my $root;
 while (local $_ = shift) {
-  if (/^-h|--help$/) {
+  if (/^(?:-h|--help)$/) {
     help();
   }
-  elsif (/^-j|--json$/) {
+  elsif (/^(?:-j|--json)$/) {
     $OPTS{json} = 1;
   }
-  elsif (/^-n|--no-colour$/) {
+  elsif (/^(?:-n|--no-colour)$/) {
     $OPTS{colour} = 0;
   }
-  elsif (/^-p|--prettify-json$/) {
+  elsif (/^(?:-p|--prettify-json)$/) {
     $OPTS{json} = 1; $OPTS{json_pretty} = 1;
   }
-  elsif (/^-v|--version$/) {
+  elsif (/^(?:-v|--version)$/) {
     version();
   }
   elsif (/^-{1,2}\w+/) {
     err 1, 'illegal argument - '.$_;
   }
   elsif (/^--$/) {
-    $root = shift if @ARGV;
-    last;
+    $root = shift if @ARGV; last;
   }
   else {
-    $root = $_;
-    last;
+    $root = $_; last;
   }
 }
 
