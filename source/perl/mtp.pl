@@ -79,8 +79,8 @@ my sub help {
 
       Modules:
       Cwd
-      JSON::PP        (required with -j, -p)
-      Term::ANSIColor (optional with -n)
+      JSON::PP        (required with -j)
+      Term::ANSIColor (optional with -j, -n)
 
   VERSION
       $version
@@ -244,13 +244,16 @@ while (local $_ = shift) {
     help();
   }
   elsif (/^(?:-j|--json)$/) {
+    $OPTS{colour} = 0;
     $OPTS{json} = 1;
   }
   elsif (/^(?:-n|--no-colour)$/) {
     $OPTS{colour} = 0;
   }
   elsif (/^(?:-p|--prettify-json)$/) {
-    $OPTS{json} = 1; $OPTS{json_pretty} = 1;
+    $OPTS{colour} = 0;
+    $OPTS{json} = 1;
+    $OPTS{json_pretty} = 1;
   }
   elsif (/^(?:-v|--version)$/) {
     version();
