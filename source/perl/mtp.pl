@@ -12,9 +12,11 @@ $" = ', ';
 
 my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
-my $version   = '0.0.4';
+my $version   = '0.0.5';
 
 my %OPTS = ( colour => 1, json => 0, json_pretty => 0 );
+my %JSON = ();
+my ($PACKAGE, $CLASS) = ''x2;
 
 my sub err($$) { # exit_code, message
   printf STDERR "$program: %s\n", $_[1];
@@ -121,7 +123,9 @@ my sub dep_check {
 }
 
 my sub find_mvn_root_rec($) { local $_ = shift;
-  mvn 2, 'ERR', 'Fatal: No maven root found' if m{^/$};
+  if (m{^/$}) {
+    $OPTS{json} ? return undef : mvn 2, 'ERR', 'Fatal: No maven root found';
+  }
 
   opendir DH, $_ or err 1, 'failed to open dirhandle \''.$_.'\'';
     return $_ if grep /^pom\.xml$/, readdir DH;
@@ -132,123 +136,74 @@ my sub find_mvn_root_rec($) { local $_ = shift;
 }
 
 my sub find_mvn_root {
-  # FIX: suppress output, and push $cwd to %JSON with -j
-  my ($cwd, $root) = (Cwd::getcwd(), 0);
-  mvn 0, 'INF', 'Looking for maven root directory...';
-  $cwd = find_mvn_root_rec($cwd);
-  mvn 0, 'INF', 'Found maven root at '.$cwd;
-  chdir $cwd;
+  $JSON{maven}{rootDirectory} = find_mvn_root_rec(Cwd::getcwd());
+  mvn 0, 'INF', 'Found maven root at '.$JSON{maven}{rootDirectory}
+    if not $OPTS{json};
+  $JSON{maven}{rootDirectory} and chdir $JSON{maven}{rootDirectory};
 }
 
-my sub parse_json($) {
-  my %JSON = ();
-  my ($FH, $PACKAGE, $CLASS) = (shift, ('')x2);
-  my (@tally, @failed) = ()x2;
+my sub parse_package($$) {
+  mvn 0, 'INF', 'Testing package '.$_[0] if not $OPTS{json} and $PACKAGE ne $_[0];
+  ($PACKAGE, $CLASS) = (shift, shift);
+  mvn 0, 'INF', 'Running '.$CLASS if not $OPTS{json};
+}
 
-  # synchronous parse
-  while (<$FH>) {
-    next unless /^\[\w+\]/;
+my sub parse_tests($$) {
+  mvn 0, substr($1, 0, 3), $CLASS.' results:' if not $OPTS{json};
+  $2 =~ /^(\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)/;
 
-    if (/^\[INFO\] Running ([\w.]+)\.(\w+)$/) {
-      if ($1 ne $PACKAGE) { $PACKAGE = $1; $JSON{testResults}{$PACKAGE} = {}; }
-      $CLASS = $2;
-    }
-
-    if (/^\[\w+\] Tests run: (.*), Time elapsed:/) {
-      $1 =~ /^(\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)/;
-      $JSON{testResults}{$PACKAGE}{$CLASS} = {
-        test => $1, fail => $2, error => $3, skip => $4
-      };
-      my $i = 0;
-      $tally[$i++] += $_ foreach ($1, $2, $3, $4);
-      undef $i;
-    }
-
-    if (/^\[ERROR\] Errors:/) {
-      while (local $_ = <$FH>) {
-        last if /^\[INFO\]/;
-        /^\[ERROR\]\s+(\w+)\.(\w+)/;
-        push @{ $JSON{maven}{failedTests}{$1} }, $2;
-      }
-    }
-
-    if (/^\[INFO\] BUILD (\w+)$/) { $JSON{maven}{buildStatus} = $1; }
-    if (/^\[INFO\] Total time:\s+(.*)$/) { $JSON{maven}{totalTime} = $1 }
+  my @keys = ( 'tests', 'fail', 'error', 'skip' );
+  no strict 'refs';
+  foreach (0..$#keys) {
+    $JSON{testResults}{$PACKAGE}{$CLASS}{$keys[$_]} = ${$_+1};
+    $JSON{testResults}{tallied}{$keys[$_]} += ${$_+1};
   }
+  use strict;
 
-  # output
-  print JSON::PP->new->pretty($OPTS{json_pretty})->encode(\%JSON);
+  if (not $OPTS{json}) {
+    print '  Ran     : ', $1, "\n";
+    print '  Passed  : ', ($1 - $2 - $3), "\n";
+    print '  Failed  : ', $2, "\n";
+    print '  Errored : ', $3, "\n";
+    print '  Skipped : ', $4, "\n";
+  }
 }
 
-my sub parse_plain($) {
-  my ($PACKAGE, $CLASS, $TIME, $BUILD) = ('')x4;
-  my (@tally, @failed) = ()x2;
-
-  # synchronous parse
+my sub parse_errors($) {
   my $FH = shift;
-  while (<$FH>) {
-    next unless /^\[\w+\]/;
-
-    if (/^\[INFO\] Running ([\w.]+)\.(\w+)$/) {
-      if ($1 ne $PACKAGE) {
-        $PACKAGE = $1; mvn 0, 'INF', 'Testing package '.$PACKAGE;
-      }
-      $CLASS = $2; mvn 0, 'INF', 'Running '.$CLASS;
-    }
-
-    if (/^\[(\w+)\] Tests run: (.*), Time elapsed:/) {
-      mvn 0, substr($1, 0, 3), $CLASS.' results:';
-      $2 =~ /^(\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)/;
-      my ($t, $f, $e, $s) = ($1, $2, $3, $4);
-
-      my $i = 0;
-      $tally[$i++] += $_ foreach ($t, $f, $e, $s);
-      undef $i;
-
-      print '  Ran     : ', $t, "\n";
-      print '  Passed  : ', ($t - $f - $e), "\n";
-      print '  Failed  : ', $f, "\n";
-      print '  Errored : ', $e, "\n";
-      print '  Skipped : ', $s, "\n";
-    }
-
-    if (/^\[ERROR\] Errors:/) {
-      while (local $_ = <$FH>) {
-        last if /^\[INFO\]/;
-        /^\[ERROR\]\s+(\w+)\.(\w+)/;
-        push @failed, [$1, $2];
-      }
-    }
-
-    if (/^\[INFO\] BUILD (\w+)$/) { $BUILD = $1; }
-    if (/^\[INFO\] Total time:\s+(.*)$/) { $TIME = $1; }
+  while (local $_ = <$FH>) {
+    last if /^\[INFO\]/;
+    /^\[ERROR\]\s+(\w+)\.(\w+)/;
+    # TEST: ensure this works with multi-package projects
+    push @{$JSON{testResults}{$PACKAGE}{failedTests}{$1}}, $2;
   }
-
-  # test summary
-  mvn 0, 'INF', 'Summary';
-  mvn 0, $tally[1] + $tally[2] == 0 ? 'INF' : 'ERR', 'Test summary:';
-  print '  Ran     : ', $tally[0], "\n";
-  print '  Passed  : ', $tally[0] - $tally[1] - $tally[2], "\n";
-  print '  Failed  : ', $tally[1], "\n";
-  print '  Errored : ', $tally[2], "\n";
-  print '  Skipped : ', $tally[3], "\n";
-
-  if (@failed) {
-    mvn 0, 'ERR', 'Failed tests:';
-    print '  ', $_->[0], ' -> ', $_->[1], "\n" foreach @failed;
-  }
-
-  my $sev = $BUILD =~ /^SUCCESS$/ ? 'INF' : 'ERR';
-  mvn 0, $sev, 'Build '.lc $BUILD;
-  mvn 0, 'INF', 'Time taken: '.$TIME;
 }
 
-my sub parse($) {
-  if ($OPTS{json}) {
-    parse_json(shift);
-  } else {
-    parse_plain(shift);
+my sub summary {
+  my %total = %{$JSON{testResults}{tallied}};
+  mvn 0, 'INF', 'Summary';
+  mvn 0, $total{fail} + $total{error} == 0 ? 'INF' : 'ERR', 'Test summary:';
+  print '  Ran     : ', $total{tests}, "\n";
+  print '  Passed  : ', $total{tests} - $total{fail} - $total{error}, "\n";
+  print '  Failed  : ', $total{fail}, "\n";
+  print '  Errored : ', $total{error}, "\n";
+  print '  Skipped : ', $total{skip}, "\n";
+
+  my %results = %{$JSON{testResults}};
+  foreach (sort keys %results) { # packages
+    my %package = %{$results{$_}};
+    next if /^tallied$/ or not $package{failedTests};
+
+    mvn 0, 'ERR', 'Failed tests ('.$_.'):';
+    foreach (sort keys %{$package{failedTests}}) { # classes
+      my $class = $_;
+      print '  ', $class, ' -> ', $_, "\n" foreach @{$package{failedTests}{$class}};
+    }
   }
+
+  my $sev = $JSON{maven}{buildStatus} =~ /^SUCCESS$/ ? 'INF' : 'ERR';
+  mvn 0, $sev, 'Build '.lc $JSON{maven}{buildStatus};
+  mvn 0, 'INF', 'Time taken: '.$JSON{maven}{totalTime};
 }
 
 # option processing
@@ -280,8 +235,24 @@ dep_check();
 find_mvn_root();
 
 # parse test output
-open my $FH, '-|', 'mvn test 2>/dev/null' or err 1, 'failed to spawn \'mvn test\'';
-  parse($FH);
+open my $FH, '-|', 'mvn test 2>/dev/null' or err 1, 'failed to spawn mvn';
+  while (<$FH>) {
+    next unless /^\[\w+\]/;
+
+    parse_package($1, $2) if /^\[INFO\] Running ([\w.]+)\.(\w+)$/;
+    parse_tests($1, $2)   if /^\[(\w+)\] Tests run: (.*), Time elapsed:/;
+    parse_errors($FH)     if /^\[ERROR\] Errors:/;
+
+    $JSON{maven}{buildStatus} = $1 if /^\[INFO\] BUILD (\w+)$/;
+    $JSON{maven}{totalTime}   = $1 if /^\[INFO\] Total time:\s+(.*)$/;
+  }
+  summary() if not $OPTS{json};
 close $FH or $? = $? == 256 ? 1 : $?;
-# FIX: suppress output and push $? to %JSON with -j
-$? > 0 and mvn $?, 'ERR', 'Fatal: maven returned non-zero exit status';
+$JSON{maven}{exitCode} = $?;
+
+if ($OPTS{json}) {
+  print JSON::PP->new->pretty($OPTS{json_pretty})->encode(\%JSON);
+} else {
+  mvn $JSON{maven}{exitCode}, 'ERR', 'Fatal: maven returned non-zero exit status'
+    if $JSON{maven}{exitCode} > 0;
+}
