@@ -139,7 +139,7 @@ my sub validate_root($) {
     $JSON{maven}{rootDirectory} = Cwd::abs_path($root);
   } elsif (-f $root) {
     $root =~ s{/?([^/]+?)$}{};
-    $JSON{maven}{pomXml} = $1;
+    $JSON{maven}{rootFile} = $1;
     $JSON{maven}{rootDirectory} = Cwd::abs_path($root || '.');
   } else {
     err 1, 'target \''.$root.'\' does not exist'
@@ -158,14 +158,14 @@ my sub find_mvn_root_rec($) { local $_ = shift;
   }
 
   opendir DH, $_ or err 1, 'failed to open dirhandle \''.$_.'\'';
-    return $_ if grep /^$JSON{maven}{pomXml}$/, readdir DH;
+    return $_ if grep /^$JSON{maven}{rootFile}$/, readdir DH;
   closedir DH or err 1, 'failed to close dirhandle \''.$_.'\'';
 
   __SUB__->(Cwd::abs_path($_.'/..'));
 }
 
 my sub find_mvn_root {
-  $JSON{maven}{pomXml} //= 'pom.xml';
+  $JSON{maven}{rootFile} //= 'pom.xml';
   $JSON{maven}{rootDirectory} //= find_mvn_root_rec(Cwd::getcwd());
 
   mvn 0, 'INF', 'Found maven root at '.$JSON{maven}{rootDirectory}
@@ -275,7 +275,7 @@ do { validate_root($root); undef $root; } if $root;
 find_mvn_root();
 
 # parse test output
-open my $FH, '-|', 'mvn test -f '.$JSON{maven}{rootDirectory}.'/'.$JSON{maven}{pomXml}.' 2>/dev/null'
+open my $FH, '-|', 'mvn test -f '.$JSON{maven}{rootDirectory}.'/'.$JSON{maven}{rootFile}.' 2>/dev/null'
     or err 1, 'failed to spawn mvn';
   while (<$FH>) {
     next unless /^\[\w+\]/;
