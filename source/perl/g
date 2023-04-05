@@ -724,7 +724,7 @@ unless ($Action =~ /^(?:clone|init)$/) {
 # String generation:
 my $Command = "git $Action $Opts -- @Targets";
 $Command =~ s/--\s//
-  if $Action =~ /merge/ and $Opts =~ /--(?:abort|continue|quit)/;
+  if $Action =~ /^(?:merge|rebase)$/ and $Opts =~ /--(?:abort|continue|quit)/;
 $Command  =~ s/\s+/ /g;
 $Opts     =~ s/\s+/ /g;
 
