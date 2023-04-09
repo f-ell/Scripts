@@ -1,9 +1,12 @@
 #!/usr/bin/perl
 use warnings; use strict;
 use feature 'current_sub';
+use experimental 'smartmatch';
 $" = ', ';
 
 # TODO:
+# * functionality
+#   * store test error messages and print on demand
 # * options
 #   * fail control
 #   * offline mode
@@ -11,10 +14,11 @@ $" = ', ';
 
 my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
-my $version   = '0.0.7';
+my $version   = '0.0.8';
 
 my %OPTS = ( colour => 1, json => 0, json_pretty => 0 );
 my %JSON = ();
+my $TEST = '-Dtest=';
 my ($PACKAGE, $CLASS) = ('')x2;
 
 my sub err($$) { # exit_code, message
@@ -39,7 +43,7 @@ my sub help {
       $program - `mvn test` parser
 
   SYNOPSIS
-      $program [OPTS] [DIR|FILE]
+      $program [OPTS] [TESTSPEC]
 
   DESCRIPTION
       $program parses maven's `test` output in an effort to reduce clutter and
@@ -47,10 +51,13 @@ my sub help {
       this, a not insignificant portion of the output is discarded, parts of
       which may be deemed vital by some users.
 
-      By default $program walks upwards the directory tree in an effort to find
-      a pom.xml file, starting from the working directory. DIR|FILE may be used
-      if maven is to be run in a different directory, or with a differently
-      named project file.
+      Before execution, $program walks up the directory tree, looking for a
+      maven project root (i.e. pom.xml, also see -r) at each level. If it finds
+      one, maven is run in that directory.
+
+      TESTSPEC can be used to only run specific test classes and/or methods.
+      The spec is passed to maven's `-Dtest=`-option and should conform to its
+      syntax (see https://maven.apache.org/surefire/maven-surefire-plugin/examples/single-test.html).
 
   OPTIONS
       -h | --help
@@ -64,6 +71,9 @@ my sub help {
 
       -p | --prettify-json
           Output JSON data in prettified format, implies -j.
+
+      -r | --root DIR|FILE
+          Run maven in another directory or with a different project file.
 
       -v | --version
           Print version information and exit.
@@ -118,8 +128,8 @@ my sub mod_avail {
   );
 
   foreach (@mods) {
-    next if ($_->{cond} // 1) == 0;
-    eval 'use '.$_->{mod}.' '.($_->{args} // '');
+    next if ($_->{cond} // 1) == 0 or (@_ and not $_->{mod} ~~ @_);
+    eval "use $_->{mod} ".($_->{args} // '');
     $@ ? push @missing, $_->{mod} : (defined $_->{cb} and $_->{cb}());
   }
 
@@ -142,7 +152,7 @@ my sub validate_root($) {
     $JSON{maven}{rootFile} = $1;
     $JSON{maven}{rootDirectory} = Cwd::abs_path($root || '.');
   } else {
-    err 1, 'target \''.$root.'\' does not exist'
+    err 1, "target '$root' not found"
   }
 }
 
@@ -157,9 +167,9 @@ my sub find_mvn_root_rec($) { local $_ = shift;
     }
   }
 
-  opendir DH, $_ or err 1, 'failed to open dirhandle \''.$_.'\'';
+  opendir DH, $_ or err 1, "failed to open dirhandle '$_'";
     return $_ if grep /^$JSON{maven}{rootFile}$/, readdir DH;
-  closedir DH or err 1, 'failed to close dirhandle \''.$_.'\'';
+  closedir DH or err 1, "failed to close dirhandle '$_'";
 
   __SUB__->(Cwd::abs_path($_.'/..'));
 }
@@ -204,14 +214,15 @@ my sub parse_errors($) {
   my $FH = shift;
   while (local $_ = <$FH>) {
     last if /^\[INFO\]/;
-    /^\[ERROR\]\s+(\w+)\.(\w+)/;
+    /^\[ERROR\]\s+(?:(\w+)\.)(\w+)/;
     # TEST: ensure this works with multi-package projects
-    push @{$JSON{testResults}{$PACKAGE}{failedTests}{$1}}, $2;
+    push @{$JSON{testResults}{$PACKAGE}{failedTests}{$1 // 'compilationError'}}, $2;
   }
 }
 
 my sub summary {
-  my %total = %{$JSON{testResults}{tallied}};
+  my %total = %{$JSON{testResults}{tallied}
+    // {tests => 0, fail => 0, error => 0, skip => 0}};
   mvn 0, 'INF', 'Summary';
   mvn 0, $total{fail} + $total{error} == 0 ? 'INF' : 'ERR', 'Test summary:';
   print '  Ran     : ', $total{tests}, "\n";
@@ -238,7 +249,6 @@ my sub summary {
 }
 
 # option processing
-my $root;
 while (local $_ = shift) {
   if (/^(?:-h|--help)$/) {
     help();
@@ -255,6 +265,14 @@ while (local $_ = shift) {
     $OPTS{json} = 1;
     $OPTS{json_pretty} = 1;
   }
+  elsif (/^(?:-r|--root)$/) {
+    # TODO: find a better way to detect options
+    my @OPTS = ( '-h', '--help', '-j', '--json', '-n', '--no-colour',
+      '-p', '--prettify-json', '-r', '--root', '-v', '--version' );
+    err 1, "missing argument for '$_'" if not @ARGV or $ARGV[0] ~~ @OPTS;
+    mod_avail('Cwd');
+    validate_root(shift);
+  }
   elsif (/^(?:-v|--version)$/) {
     version();
   }
@@ -262,20 +280,19 @@ while (local $_ = shift) {
     err 1, 'illegal argument - '.$_;
   }
   elsif (/^--$/) {
-    $root = shift if @ARGV; last;
+    $TEST .= shift if @ARGV; last;
   }
   else {
-    $root = $_; last;
+    $TEST .= $_; last;
   }
 }
 
 # preliminary checks
 dep_check();
-do { validate_root($root); undef $root; } if $root;
 find_mvn_root();
 
 # parse test output
-open my $FH, '-|', 'mvn test -f '.$JSON{maven}{rootDirectory}.'/'.$JSON{maven}{rootFile}.' 2>/dev/null'
+open my $FH, '-|', "mvn test -f $JSON{maven}{rootDirectory}/$JSON{maven}{rootFile} $TEST 2>/dev/null"
     or err 1, 'failed to spawn mvn';
   while (<$FH>) {
     next unless /^\[\w+\]/;
@@ -294,6 +311,7 @@ $JSON{maven}{exitCode} = $?;
 $OPTS{json}
   ? json()
   : do {
-    mvn $JSON{maven}{exitCode}, 'ERR', 'Fatal: maven returned non-zero exit status'
+    mvn $JSON{maven}{exitCode}, 'ERR',
+    'Fatal: maven returned non-zero exit status'
       if $JSON{maven}{exitCode} > 0;
   };
