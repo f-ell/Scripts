@@ -5,18 +5,17 @@ use experimental 'smartmatch';
 $" = ', ';
 
 # TODO:
-# * functionality
-#   * store test error messages and print on demand
 # * options
+#   * group test classes and failed tests in single object
 #   * fail control
 #   * offline mode
 #   * omit / only tally
 
 my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
-my $version   = '0.0.8';
+my $version   = '0.0.9';
 
-my %OPTS = ( colour => 1, json => 0, json_pretty => 0 );
+my %OPTS = ( colour => 1, error => 1, json => 0, json_pretty => 0 );
 my %JSON = ();
 my $TEST = '-Dtest=';
 my ($PACKAGE, $CLASS) = ('')x2;
@@ -60,6 +59,10 @@ my sub help {
       syntax (see https://maven.apache.org/surefire/maven-surefire-plugin/examples/single-test.html).
 
   OPTIONS
+      -e | --no-errors
+          Exclude failed test methods and reasons from the test summary. Does
+          not affect JSON output.
+
       -h | --help
           Print help information and exit.
 
@@ -193,7 +196,7 @@ my sub parse_tests($$) {
   $2 =~ /^(\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)/;
 
   my @keys = ( 'tests', 'fail', 'error', 'skip' );
-  # WARN: black magic ahead
+  # HACK: black magic ahead
   no strict 'refs';
   foreach (0..$#keys) {
     $JSON{testResults}{$PACKAGE}{$CLASS}{$keys[$_]} = ${$_+1};
@@ -214,9 +217,10 @@ my sub parse_errors($) {
   my $FH = shift;
   while (local $_ = <$FH>) {
     last if /^\[INFO\]/;
-    /^\[ERROR\]\s+(?:(\w+)\.)(\w+)/;
+    /^\[ERROR\]\s+(?:(.+?)\.)(.+?):\d+\s+(.*)$/;
     # TEST: ensure this works with multi-package projects
-    push @{$JSON{testResults}{$PACKAGE}{failedTests}{$1 // 'compilationError'}}, $2;
+    push @{$JSON{testResults}{$PACKAGE}{failures}{$1 // 'unknownClass'}},
+      { method => $2, reason => $3 };
   }
 }
 
@@ -234,12 +238,15 @@ my sub summary {
   my %results = %{$JSON{testResults}};
   foreach (sort keys %results) { # packages
     my %package = %{$results{$_}};
-    next if /^tallied$/ or not $package{failedTests};
+    next if /^tallied$/ or not $package{failures};
 
-    mvn 0, 'ERR', 'Failed tests ('.$_.'):';
-    foreach (sort keys %{$package{failedTests}}) { # classes
-      my $class = $_;
-      print '  ', $class, ' -> ', $_, "\n" foreach @{$package{failedTests}{$class}};
+    if ($OPTS{error}) {
+      mvn 0, 'ERR', 'Failed tests ('.$_.'):';
+      foreach (sort keys %{$package{failures}}) { # classes
+        my $class = $_;
+          print '  ', $class, ' -> ', $_->{method}, ' (', $_->{reason}, ")\n"
+            foreach @{$package{failures}{$class}};
+      }
     }
   }
 
@@ -250,7 +257,10 @@ my sub summary {
 
 # option processing
 while (local $_ = shift) {
-  if (/^(?:-h|--help)$/) {
+  if (/^(?:-e|--no-errors)$/) {
+    $OPTS{error} = 0;
+  }
+  elsif (/^(?:-h|--help)$/) {
     help();
   }
   elsif (/^(?:-j|--json)$/) {
@@ -299,7 +309,7 @@ open my $FH, '-|', "mvn test -f $JSON{maven}{rootDirectory}/$JSON{maven}{rootFil
 
     parse_package($1, $2) if /^\[INFO\] Running ([\w.]+)\.(\w+)$/;
     parse_tests($1, $2)   if /^\[(\w+)\] Tests run: (.*), Time elapsed:/;
-    parse_errors($FH)     if /^\[ERROR\] Errors:/;
+    parse_errors($FH)     if /^\[ERROR\] (?:Errors|Failures):/;
 
     $JSON{maven}{buildStatus} = $1 if /^\[INFO\] BUILD (\w+)$/;
     $JSON{maven}{totalTime}   = $1 if /^\[INFO\] Total time:\s+(.*)$/;
