@@ -215,12 +215,21 @@ my sub parse_tests($$) {
 
 my sub parse_errors($) {
   my $FH = shift;
+
+  my sub duplicate($$$) {
+    my ($class, $method, $reason) = (shift, shift, shift);
+    foreach (@{$JSON{testResults}{$PACKAGE}{failures}{$class // 'unknownClass' }}) {
+      return 1 if $method eq $_->{method} and $reason eq $_->{reason};
+    }
+    return 0;
+  }
+
   while (local $_ = <$FH>) {
     last if /^\[INFO\]/;
     /^\[ERROR\]\s+(?:(.+?)\.)(.+?):\d+\s+(.*)$/;
     # TEST: ensure this works with multi-package projects
     push @{$JSON{testResults}{$PACKAGE}{failures}{$1 // 'unknownClass'}},
-      { method => $2, reason => $3 };
+      { method => $2, reason => $3 } if not duplicate($1, $2, $3);
   }
 }
 
@@ -244,8 +253,8 @@ my sub summary {
       mvn 0, 'ERR', 'Failed tests ('.$_.'):';
       foreach (sort keys %{$package{failures}}) { # classes
         my $class = $_;
-          print '  ', $class, ' -> ', $_->{method}, ' (', $_->{reason}, ")\n"
-            foreach @{$package{failures}{$class}};
+        print '  ', $class, ' -> ', $_->{method}, " ('", $_->{reason}, "')\n"
+          foreach @{$package{failures}{$class}};
       }
     }
   }
