@@ -253,7 +253,8 @@ my sub summary {
       mvn 0, 'ERR', 'Failed tests ('.$_.'):';
       foreach (sort keys %{$package{failures}}) { # classes
         my $class = $_;
-        print '  ', $class, ' -> ', $_->{method}, " ('", $_->{reason}, "')\n"
+        print '  ', $class, ' -> ', $_->{method},
+          ($_->{reason} and " ('", $_->{reason}, "')"), "\n"
           foreach @{$package{failures}{$class}};
       }
     }
