@@ -5,6 +5,8 @@ use experimental 'smartmatch';
 $" = ', ';
 
 # TODO:
+# * misc
+#   * print summary only when more than one package/class was tested
 # * options
 #   * group test classes and failed tests in single object
 #   * fail control
@@ -244,12 +246,12 @@ my sub summary {
   print '  Errored : ', $total{error}, "\n";
   print '  Skipped : ', $total{skip}, "\n";
 
-  my %results = %{$JSON{testResults}};
-  foreach (sort keys %results) { # packages
-    my %package = %{$results{$_}};
-    next if /^tallied$/ or not $package{failures};
+  if ($OPTS{error}) {
+    my %results = %{$JSON{testResults}};
+    foreach (sort keys %results) { # packages
+      my %package = %{$results{$_}};
+      next if /^tallied$/ or not $package{failures};
 
-    if ($OPTS{error}) {
       mvn 0, 'ERR', 'Failed tests ('.$_.'):';
       foreach (sort keys %{$package{failures}}) { # classes
         my $class = $_;
