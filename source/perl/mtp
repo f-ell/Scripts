@@ -182,9 +182,6 @@ my sub find_mvn_root_rec($) { local $_ = shift;
 my sub find_mvn_root {
   $JSON{maven}{rootFile} //= 'pom.xml';
   $JSON{maven}{rootDirectory} //= find_mvn_root_rec(Cwd::getcwd());
-
-  mvn 0, 'INF', 'Found maven root at '.$JSON{maven}{rootDirectory}
-    if not $OPTS{json};
 }
 
 my sub parse_package($$) {
@@ -313,10 +310,18 @@ while (local $_ = shift) {
 dep_check();
 find_mvn_root();
 
+$JSON{maven}{javaHome} = $ENV{JAVA_HOME} // undef;
+
 # parse test output
-open my $FH, '-|', "mvn test -f $JSON{maven}{rootDirectory}/$JSON{maven}{rootFile} $TEST 2>/dev/null"
+open my $FH, '-|', "mvn test -f $JSON{maven}{rootDirectory}/$JSON{maven}{rootFile} $TEST 2>&1"
     or err 1, 'failed to spawn mvn';
   while (<$FH>) {
+    if ($. == 1 and /JAVA_HOME/) {
+      err 1, 'invalid JAVA_HOME - '.$JSON{maven}{javaHome} // '';
+    } elsif ($. == 1 and not $OPTS{json}) {
+      mvn 0, 'INF', 'Found maven root at '.$JSON{maven}{rootDirectory};
+    }
+
     next unless /^\[\w+\]/;
 
     parse_package($1, $2) if /^\[INFO\] Running ([\w.]+)\.(\w+)$/;
