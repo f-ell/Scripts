@@ -15,7 +15,7 @@ $" = ', ';
 
 my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
-my $version   = '0.0.9';
+my $version   = '0.1.0';
 
 my %OPTS = ( colour => 1, error => 1, json => 0, json_pretty => 0 );
 my %JSON = ();
