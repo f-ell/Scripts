@@ -128,8 +128,12 @@ my sub mod_avail {
     { mod => 'Term::ANSIColor',
       cond => $OPTS{colour},
       args => '4.00 qw(color colored coloralias)',
-      cb => sub { Term::ANSIColor::coloralias('INF', 'bold blue');
-        Term::ANSIColor::coloralias('ERR', 'bold red'); } }
+      cb => sub {
+        Term::ANSIColor::coloralias('INF', 'bold blue');
+        Term::ANSIColor::coloralias('ERR', 'bold red');
+        Term::ANSIColor::coloralias('WAR', 'bold yellow');
+      }
+    }
   );
 
   foreach (@mods) {
