@@ -15,9 +15,9 @@ $" = ', ';
 
 my $author    = 'Nico Pareigis';
 my ($program) = $0 =~ m{^.*/(.+)$};
-my $version   = '0.1.0';
+my $version   = '0.1.1';
 
-my %OPTS = ( colour => 1, error => 1, json => 0, json_pretty => 0 );
+my %OPTS = ( colour => 1, error => 1, json => 0, json_pretty => 0, quiet => 0, silent => 0 );
 my %JSON = ();
 my $TEST = '-Dtest=';
 my ($PACKAGE, $CLASS) = ('')x2;
@@ -48,9 +48,9 @@ my sub help {
 
   DESCRIPTION
       $program parses maven's `test` output in an effort to reduce clutter and
-      visual noise, whilst improving the legibility of test results. To achieve
+      visual noise, whilst improving the readability of test results. To achieve
       this, a not insignificant portion of the output is discarded, parts of
-      which may be deemed vital by some users.
+      which may be deemed vital by some users (e.g. stack traces).
 
       Before execution, $program walks up the directory tree, looking for a
       maven project root (i.e. pom.xml, also see -r) at each level. If it finds
@@ -77,8 +77,16 @@ my sub help {
       -p | --prettify-json
           Output JSON data in prettified format, implies -j.
 
+      -q | --quiet
+          Suppress detailed results for individual test classes. Does not
+          suppress current package and class name or summary (see -s).
+
       -r | --root DIR|FILE
           Run maven in another directory or with a different project file.
+
+      -s | --silent
+          Suppress detailed results for individual test classes as well as
+          current package and class names. Does not suppress summary (see -q).
 
       -v | --version
           Print version information and exit.
@@ -189,13 +197,14 @@ my sub find_mvn_root {
 }
 
 my sub parse_package($$) {
+  return if $OPTS{silent};
   mvn 0, 'INF', 'Testing package '.$_[0] if not $OPTS{json} and $_[0] ne $PACKAGE;
   ($PACKAGE, $CLASS) = (shift, shift);
   mvn 0, 'INF', 'Running '.$CLASS if not $OPTS{json};
 }
 
 my sub parse_tests($$) {
-  mvn 0, substr($1, 0, 3), $CLASS.' results:' if not $OPTS{json};
+  mvn 0, substr($1, 0, 3), $CLASS.' results:' if not ($OPTS{json} or $OPTS{quiet});
   $2 =~ /^(\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)/;
 
   my @keys = ( 'tests', 'fail', 'error', 'skip' );
@@ -207,7 +216,7 @@ my sub parse_tests($$) {
   }
   use strict;
 
-  if (not $OPTS{json}) {
+  if (not ($OPTS{json} or $OPTS{quiet})) {
     print '  Ran     : ', $1, "\n";
     print '  Passed  : ', ($1 - $2 - $3), "\n";
     print '  Failed  : ', $2, "\n";
@@ -287,6 +296,9 @@ while (local $_ = shift) {
     $OPTS{json} = 1;
     $OPTS{json_pretty} = 1;
   }
+  elsif (/^(?:-q|--quiet)$/) {
+    $OPTS{quiet} = 1;
+  }
   elsif (/^(?:-r|--root)$/) {
     # TODO: find a better way to detect options
     my @OPTS = ( '-h', '--help', '-j', '--json', '-n', '--no-colour',
@@ -294,6 +306,10 @@ while (local $_ = shift) {
     err 1, "missing argument for '$_'" if not @ARGV or $ARGV[0] ~~ @OPTS;
     mod_avail('Cwd');
     validate_root(shift);
+  }
+  elsif (/^(?:-s|--silent)$/) {
+    $OPTS{quiet} = 1;
+    $OPTS{silent} = 1;
   }
   elsif (/^(?:-v|--version)$/) {
     version();
