@@ -197,10 +197,9 @@ my sub find_mvn_root {
 }
 
 my sub parse_package($$) {
-  return if $OPTS{silent};
-  mvn 0, 'INF', 'Testing package '.$_[0] if not $OPTS{json} and $_[0] ne $PACKAGE;
+  mvn 0, 'INF', 'Testing package '.$_[0] if not ($OPTS{json} or $OPTS{silent}) and $_[0] ne $PACKAGE;
   ($PACKAGE, $CLASS) = (shift, shift);
-  mvn 0, 'INF', 'Running '.$CLASS if not $OPTS{json};
+  mvn 0, 'INF', 'Running '.$CLASS if not ($OPTS{json} or $OPTS{silent});
 }
 
 my sub parse_tests($$) {
