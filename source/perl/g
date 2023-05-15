@@ -19,7 +19,7 @@ use warnings; use strict; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.2.2-maintenance';
+my $Version   = '0.2.3-maintenance';
 
 my $Debug = ''; my $NoDefault = ''; my $ErrM = ''; my $ErrC = 0;
 my sub Err {
@@ -166,8 +166,9 @@ my sub t {
         Optionally takes tag messages. See 'c' for information on formatting.";
 }
 my sub cl {
-  return "    cl [INT] -- URL [DIR]
+  return "    cl [b] [INT] -- URL [DIR]
         Shorthand for 'git clone', where
+          'b'   => --bare
           'INT' => --depth INT
 
         Omitting the URL schema assumes https. A URL starting with a percent
@@ -300,7 +301,8 @@ DESCRIPTION
     order they are encountered.
   
     NOTE:
-    vwords are not validated; they may clash with $Program\'s default options.
+    vwords are not validated; they may clash with $Program\'s default options
+    (see 'N').
 
     When used alongside messages (commit, merge, tag), make sure to quote the
     message to avoid accidental interpretation of part of the message as a vword.
@@ -625,7 +627,8 @@ if (local $_ = shift) {
   }
   elsif (/^cl$/) {
     $Action = 'clone';
-    %Disp = (_1 => '');
+    %Disp = (b => '--bare', _1 => '');
+    %Prio = (b => -1);
   }
   elsif (/^mv$/) { $Action = 'mv'; }
   elsif (/^pl$/) {
