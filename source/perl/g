@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 use warnings; use strict; $\ = "\n";
-# Note: As of 28/09/2022, this script is, mostly, in maintenance mode.
+# NOTE: As of 28/09/2022, this script is, mostly, in maintenance mode.
 
-# Features:
+# Feature ideas:
 # * commands:
 #     git-merge --ff, --no-ff
 #     git-commit -S | git-log --show-signature
@@ -19,7 +19,7 @@ use warnings; use strict; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.2.3-maintenance';
+my $Version   = '0.2.4-maintenance';
 
 my $Debug = ''; my $NoDefault = ''; my $ErrM = ''; my $ErrC = 0;
 my sub Err {
@@ -57,7 +57,7 @@ my sub TargetErrHandler($$) {
   elsif (/^(?:branch|merge|rebase|switch)$/)            { $Err = 'Branch'; }
   elsif (/^clone$/)                                     { $Err = 'URL'; }
   elsif (/^push$/)                                      { $Err = 'Ref'; }
-  elsif (/^remote$/)                                    { $Err = 'Name'; }
+  elsif (/^(?:remote|worktree)$/)                       { $Err = 'Name'; }
   elsif (/^tag$/)                                       { $Err = 'Tag'; }
   SigHandler($Err.'Err');
 }
@@ -236,6 +236,18 @@ my sub sw {
         Shorthand for 'git switch', where
           'd' => -d";
 }
+my sub wt {
+  return "    wt [l]
+    wt a -- PATH [COMMIT]
+    wt mv -- SOURCE DEST
+    wt rm -- PATH
+        Shorthand for 'git worktree', where
+        'l'  => list, default
+        'a'  => add
+        'mv' => move
+        'rm' => remove
+  ";
+}
 my sub reb {
   return "    reb [i] [-- BRANCH]
     reb [acq]
@@ -274,7 +286,7 @@ my sub rev {
 
 my @Help = (
   D, N, h, a, b, c, d, f, i, l, _m, _s, t,
-  cl, mv, pl, ps, re, rm, sh, st, sw,
+  cl, mv, pl, ps, re, rm, sh, st, sw, wt,
   reb, rem, res, rev
 );
 
@@ -292,7 +304,8 @@ DESCRIPTION
 
     $Program currently provides shorthands for the following commands:
     add, branch, clone, commit, diff, fetch, init, log, merge, mv, pull, push,
-    rebase, remote, reset, restore, revert, rm, show, stash, status, switch, tag
+    rebase, remote, reset, restore, revert, rm, show, stash, status, switch, tag,
+    worktree
 
     $Program supports 'verbatim words' (vwords), which are passed directly to
     Git with no special treatment or checks. vwords can be used to access Git
@@ -330,7 +343,7 @@ AUTHOR(S)
 
 
 my ($TargetOpt, $TargetReq, $TargetBan) = ('') x 3;
-my @Bans      = qw'f';
+my @Bans      = qw'f wt';
 my @Optional  = qw'b c d i l s pl ps sh sw st reb';
 my @Requires  = qw'a m t cl mv re rm rem res rev';
 
@@ -525,6 +538,10 @@ my sub TargetProc($$) {
     if /^branch$/ and $Opts =~ /-(?:c|d|m)/
       or /^push$/ and $Opts =~ /-d/;
 
+  # TargetBan -> TargetReq
+  do { undef $TargetBan; $TargetReq = 1; }
+    if /^worktree$/ and $Opts =~ /(?:add|move|remove)/;
+
   # * -> TargetBan
   do { undef $TargetOpt; undef $TargetReq; $TargetBan = 1; }
     if /^(?:merge|rebase)$/ and $Opts =~ /--(?:abort|continue|quit)/
@@ -535,7 +552,7 @@ my sub TargetProc($$) {
   # Edge-case handling:
   if (/^clone|remote$/) {
     for my $i (0 .. $#Targets)  { local $_ = $Targets[$i];
-      unless (m{^(?:\.){0,2}/}) { # Ignore if local path
+      unless (m{^(?:\.){0,2}/} || stat) { # Ignore local paths
         my ($Schema, $Host) = ('') x 2;
         $Schema = 'https://'    if m{^(?!.*://).*?/};
         $Host   = 'github.com'  if /^%/;
@@ -558,7 +575,7 @@ my sub TargetProc($$) {
 
   if ($TargetReq) {
     if (scalar @Targets == 1) {
-      SigHandler('MvDErr')  if /^mv$/;
+      SigHandler('MvDErr')  if /^mv$/ or (/^worktree$/ and $Opts =~ /\bmove/);
       SigHandler('URLErr')  if /^remote$/ and $Opts =~ /add|set-url/;
       SigHandler('NameErr') if /^remote$/ and $Opts =~ /rename/;
     }
@@ -677,6 +694,12 @@ if (local $_ = shift) {
     $Action = 'switch';
     %Disp = (d => '-d');
     %Prio = (d => -1);
+  }
+  elsif (/^wt$/) {
+    $Action = 'worktree';
+    %Disp = (a => 'add', l => 'list', mv => 'move', rm => 'remove');
+    %Prio = (a => 1, l => 2, mv => 1, rm => 1);
+    %Rstr = (a => '_', l => '_', mv => '_', rm => '_');
   }
   elsif (/^reb$/) {
     $Action = 'rebase';
