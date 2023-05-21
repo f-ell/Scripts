@@ -92,12 +92,13 @@ my sub a {
           'p' => -p";
 }
 my sub b {
-  return "    b [acdm] [-- BRANCH...]
+  return "    b [acdmu] [-- BRANCH...]
         Shorthand for 'git branch', where
           'a' => -a
           'c' => -c
           'd' => -d
-          'm' => -m";
+          'm' => -m
+          'u' => -u";
 }
 my sub c {
   return "    c [a] [commit msg [%% submsg]] [-- FILE...]
@@ -535,7 +536,7 @@ my sub TargetProc($$) {
 
   # TargetOpt -> TargetReq
   do { undef $TargetOpt; $TargetReq = 1; }
-    if /^branch$/ and $Opts =~ /-(?:c|d|m)/
+    if /^branch$/ and $Opts =~ /-(?:c|d|m|u)/
       or /^push$/ and $Opts =~ /-d/;
 
   # TargetBan -> TargetReq
@@ -595,9 +596,9 @@ if (local $_ = shift) {
   }
   elsif (/^b$/) {
     $Action = 'branch';
-    %Disp = (a => '-a', c => '-c', d => '-d', m => '-m');
-    %Prio = (a => -1,   c => -2,   d => -2,   m => -2);
-    %Rstr = (a => '_',  c => '_',  d => '_',  m => '_');
+    %Disp = (a => '-a', c => '-c', d => '-d', m => '-m', u => '-u');
+    %Prio = (a => -1,   c => -2,   d => -2,   m => -2,   u => -2);
+    %Rstr = (a => '_',  c => '_',  d => '_',  m => '_',  u => '_');
   }
   elsif (/^c$/) {
     $Action = 'commit';
@@ -750,7 +751,8 @@ unless ($Action =~ /^(?:clone|init)$/) {
 # String generation:
 my $Command = "git $Action $Opts -- @Targets";
 $Command =~ s/--\s//
-  if $Action =~ /^(?:merge|rebase)$/ and $Opts =~ /--(?:abort|continue|quit)/;
+  if ($Action =~ /^(?:merge|rebase)$/ and $Opts =~ /--(?:abort|continue|quit)/)
+    or ($Action =~/^branch$/ and $Opts =~ /-u/);
 $Command  =~ s/\s+/ /g;
 $Opts     =~ s/\s+/ /g;
 
