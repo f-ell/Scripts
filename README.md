@@ -5,7 +5,9 @@ as well as built-in documentation on how to use them.
 
 #### Which scripts are worth checking out?
 * [`g`](https://gitlab.com/fell_/Scripts/-/blob/master/source/perl/g)
-\- Compact syntax for frequently used Git commands
+\- Compact syntax for frequently used Git commands (**deprecated**)
+  * **NOTE**: this script is deprecated, see [here](https://gitlab.com/fell_/g)
+  for a revised version
   * pseudo-wrapper around Git
   * translate short syntax to full Git command
   * includes default actions and convenience features, e.g.:

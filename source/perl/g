@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 use warnings; use strict; $\ = "\n";
 # NOTE: As of 28/09/2022, this script is, mostly, in maintenance mode.
+# WARN: As of 06/08/2023, this script is deprecated, usage is discouraged
 
 # Feature ideas:
 # * commands:
@@ -19,7 +20,7 @@ use warnings; use strict; $\ = "\n";
 
 my $Author    = 'Nico Pareigis';
 my ($Program) = $0 =~ m{^.*/(.+)$};
-my $Version   = '0.2.4-maintenance';
+my $Version   = '0.2.4-deprecated';
 
 my $Debug = ''; my $NoDefault = ''; my $ErrM = ''; my $ErrC = 0;
 my sub Err {
@@ -372,6 +373,7 @@ if (local $_ = $ARGV[0]) { # TODO: all special as $ARGV[0] and `for split ''`
   Err(2, 'cannot debug help.')  if $Debug and $Help;
   Err(2, 'nothing to debug.')   if $Debug and not $ARGV[0];
 
+  # FIX: breaks when script is called with verbatim word as first argument
   foreach (@Bans)     { do { $TargetBan = 1; last; } if /^$ARGV[0]$/ };
   foreach (@Optional) { do { $TargetOpt = 1; last; } if /^$ARGV[0]$/ };
   foreach (@Requires) { do { $TargetReq = 1; last; } if /^$ARGV[0]$/ };
@@ -763,6 +765,10 @@ unless ($Debug) {
     print $1 if $1; exit(0);
   }
 }
+
+# Deprecation notice:
+print STDERR 'WARNING: This script is deprecated, usage is discouraged.';
+print STDERR 'A revised version of the script can be found at https://gitlab.com/fell_/g.';
 
 # Debugging information / normal execution:
 if ($Debug) {
