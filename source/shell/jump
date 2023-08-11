@@ -1,0 +1,107 @@
+#!/usr/bin/bash
+
+# TODO:
+# * fuzzy finder selection (fzf,fzy,zf | -z|-y|-f)
+# * save PWD at jump in /tmp/$USER/j_dir and allow return jump (-b|--back)
+# * doc
+#   * fd uses smartcase
+#   * pattern -> anything understood by fd
+#
+# * exclude patterns in J_EXCLUDE
+
+program='j'
+author='Nico Pareigis'
+version='0.0.1'
+
+function err {
+  printf '%s: %s\n' "$program" "$2" 1>&2
+  (( $1 > 0 )) && exit $1
+}
+
+function sighandler {
+  (( ${int-0} == 1 )) && err 130 'interrupt'
+  (( ${dep-0} == 1 )) && err 3 "dependency not met - $1"
+  (( ${arg-0} == 1 )) && err 1 "unrecognized option - $1"
+  (( ${optarg-0} == 1 )) && err 1 "invalid argument for option '$1' - $2"
+  (( ${optmis-0} == 1 )) && err 1 "missing argument for option '$1'"
+  (( ${pattern-0} == 1 )) && err 1 'missing pattern'
+  (( ${result-0} == 1 )) && err 1 'no matches found'
+}
+
+function arginvalid {
+  [[ -z $1 || $1 == -- ]]
+}
+
+function dep {
+  declare -a missing
+
+  for dep in "$@"; do
+    if ! command -v $dep 1>/dev/null; then
+      missing+=($dep)
+    fi
+  done
+
+  declare deps="${missing[@]}"
+  ((${#missing[@]} > 0)) && dep=1 sighandler "${deps// /, }"
+}
+
+function proc {
+  while [[ -n $@ ]]; do
+    case "$1" in
+      -d|--depth)
+        declare arg=$1
+        shift
+        arginvalid "$1" && optmis=1 sighandler $arg
+        [[ $1 =~ ^[[:digit:]]+$ ]] && (( $1 > 0 )) || optarg=1 sighandler $arg $1
+        opts[depth]=$1
+        shift;;
+      -h|--hidden)
+        opts[hidden]='-H'
+        shift;;
+      -l|--follow-links)
+        opts[links]='-L'
+        shift;;
+      -*)
+        arg=1 sighandler $1;;
+      --|*)
+        [[ $1 == -- ]] && shift
+        patterns+=($@)
+        break;;
+    esac
+  done
+}
+
+function fuzzy_query {
+  IFS=$'\n'
+  declare file=`printf "${matches[*]}" | ${opts[fuzzy]}`
+  [[ -z $file ]] && int=1 sighandler
+  unset IFS
+  printf "cd \"$file\""
+}
+
+function jump_or_query {
+  (( ${#matches[@]} == 1 )) && printf "cd \"${matches[0]}\"" || fuzzy_query
+}
+
+# execution
+declare -A opts=(
+  [depth]=8
+  [fuzzy]='fzf'
+  [hidden]=
+  [links]=
+)
+declare -a patterns
+
+proc $@
+dep fd rg ${opts[fuzzy]}
+
+IFS='|'
+declare fd=`fd -d${opts[depth]} -td ${opts[hidden]} ${opts[links]} "${patterns[*]}"`
+unset IFS
+declare -a matches=(${fd//$'\n'/ })
+
+(( ${#matches[@]} == 0 )) && result=1 sighandler
+
+jump_or_query
+
+exit 0
