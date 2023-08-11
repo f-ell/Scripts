@@ -1,7 +1,6 @@
 #!/usr/bin/bash
 
 # TODO:
-# * fuzzy finder selection (fzf,fzy,zf | -z|-y|-f)
 # * save PWD at jump in /tmp/$USER/j_dir and allow return jump (-b|--back)
 # * doc
 #   * fd uses smartcase
@@ -11,7 +10,7 @@
 
 program='j'
 author='Nico Pareigis'
-version='0.0.1'
+version='0.0.2'
 
 function err {
   printf '%s: %s\n' "$program" "$2" 1>&2
@@ -57,11 +56,24 @@ function proc {
         [[ $1 =~ ^[[:digit:]]+$ ]] && (( $1 > 0 )) || optarg=1 sighandler $arg $1
         opts[depth]=$1
         shift;;
+      -f|--zf)
+        opts[fuzzy]='zf'
+        shift;;
+      -h|--help)
+        err 5 'not implemented yet';;
       -l|--follow-links)
         opts[links]='-L'
         shift;;
+      -v|--version)
+        err 5 'not implemented yet';;
+      -y|--fzy)
+        opts[fuzzy]='fzy'
+        shift;;
+      -z|--fzf)
+        opts[fuzzy]='fzf'
+        shift;;
       -*)
-        arg=1 sighandler $1;;
+        [[ $1 != -- ]] && arg=1 sighandler $1;&
       --|*)
         [[ $1 == -- ]] && shift
         patterns+=($@)
@@ -95,7 +107,7 @@ proc $@
 dep fd rg ${opts[fuzzy]}
 
 IFS='|'
-declare fd=`fd -d${opts[depth]} -td ${opts[hidden]} ${opts[links]} "${patterns[*]}"`
+declare fd=`fd -d${opts[depth]} -td ${opts[hidden]} ${opts[links]} -- "${patterns[*]}"`
 unset IFS
 declare -a matches=(${fd//$'\n'/ })
 
