@@ -68,8 +68,14 @@ function usage {
 	        Use \`zf\` for fuzzy-finding.
 	        Requires \`zf\` to be installed and available in \$PATH.
 
+	    -h | --help
+	        Print this help information and exit.
+
 	    -l | --follow-links
 	        Include symlinked directories in search results.
+
+	    -v | --version
+	        Print version information and exit.
 
 	    -y | --fzy
 	        Use \`fzy\` for fuzzy-finding.
@@ -107,6 +113,12 @@ function usage {
 	EOF
 }
 
+function version {
+  printf "$program $version $author\n"
+}
+
+# ----------------------------------------------------------
+
 function arginvalid {
   # FIX: ensure $1 isn't a valid option
   [[ -z $1 || $1 == -- ]]
@@ -135,7 +147,7 @@ function proc {
         jump_back
         shift;;
       -d|--depth)
-        declare arg=$1
+        deerr 5 'not implemented yet'clare arg=$1
         shift
         arginvalid "$1" && optmis=1 sighandler $arg
         [[ $1 =~ ^[[:digit:]]+$ ]] && (( $1 > 0 )) || optarg=1 sighandler $arg $1
@@ -151,7 +163,8 @@ function proc {
         opts[links]='-L'
         shift;;
       -v|--version)
-        err 5 'not implemented yet';;
+        version
+        exit 0;;
       -y|--fzy)
         opts[fuzzy]='fzy'
         shift;;
