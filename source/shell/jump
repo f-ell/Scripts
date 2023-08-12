@@ -1,7 +1,6 @@
 #!/usr/bin/bash
 
 # TODO:
-# * save PWD at jump in /tmp/$USER/j_dir and allow return jump (-b|--back)
 # * doc
 #   * fd uses smartcase
 #   * pattern -> anything understood by fd
@@ -10,7 +9,10 @@
 
 program='j'
 author='Nico Pareigis'
-version='0.0.2'
+version='0.0.3'
+
+TMPDIR="/tmp/$USER"
+TMPSRC="$TMPDIR/j_src"
 
 function err {
   printf '%s: %s\n' "$program" "$2" 1>&2
@@ -20,6 +22,11 @@ function err {
 function sighandler {
   (( ${int-0} == 1 )) && err 130 'interrupt'
   (( ${dep-0} == 1 )) && err 3 "dependency not met - $1"
+  (( ${dir-0} == 1 )) && err 2 "could not create directory '$1'"
+  (( ${tmp_store-0} == 1 )) && err 0 "warning - failed writing jump information to '$1'"
+  (( ${tmp_read-0} == 1 )) && err 2 'could not read jump information'
+  (( ${tmp_exist-0} == 1 )) && err 2 'no jump information available'
+
   (( ${arg-0} == 1 )) && err 1 "unrecognized option - $1"
   (( ${optarg-0} == 1 )) && err 1 "invalid argument for option '$1' - $2"
   (( ${optmis-0} == 1 )) && err 1 "missing argument for option '$1'"
@@ -27,6 +34,7 @@ function sighandler {
 }
 
 function arginvalid {
+  # FIX: ensure $1 isn't a valid option
   [[ -z $1 || $1 == -- ]]
 }
 
@@ -48,6 +56,9 @@ function proc {
     case "$1" in
       -a|--all)
         opts[hidden]='-H'
+        shift;;
+      -b|--back)
+        jump_back
         shift;;
       -d|--depth)
         declare arg=$1
@@ -82,16 +93,38 @@ function proc {
   done
 }
 
-function fuzzy_query {
-  IFS=$'\n'
-  declare file=`printf "${matches[*]}" | ${opts[fuzzy]}`
-  [[ -z $file ]] && int=1 sighandler
-  unset IFS
-  printf "cd \"$file\""
+# ----------------------------------------------------------
+
+function jump {
+  store_jump_info "$1"
+  printf "cd \"$1\"\n"
+}
+
+function jump_back {
+  [[ ! -f $TMPSRC ]] && tmp_exist=1 sighandler $TMPSRC
+  [[ ! -r $TMPSRC ]] && tmp_read=1 sighandler $TMPSRC
+
+  read < $TMPSRC
+  printf "cd \"$REPLY\"\n"
+
+  exit 0
 }
 
 function jump_or_query {
-  (( ${#matches[@]} == 1 )) && printf "cd \"${matches[0]}\"" || fuzzy_query
+  (( ${#@} == 1 )) && jump "$1" || query $@
+}
+
+function query {
+  declare dir=`printf "%s\n" $@ | ${opts[fuzzy]}`
+  [[ -z $dir ]] && int=1 sighandler
+
+  store_jump_info "$dir"
+  printf "cd \"$dir\"\n"
+}
+
+function store_jump_info {
+  [[ ! -d "$TMPDIR" ]] && { mkdir "$TMPDIR" || dir=1 sighandler "$TMPDIR"; }
+  printf "$PWD\n" 1> "$TMPSRC" || tmp_store=1 sighandler "$TMPSRC"
 }
 
 # execution
@@ -104,7 +137,7 @@ declare -A opts=(
 declare -a patterns
 
 proc $@
-dep fd rg ${opts[fuzzy]}
+dep realpath fd rg ${opts[fuzzy]}
 
 IFS='|'
 declare fd=`fd -d${opts[depth]} -td ${opts[hidden]} ${opts[links]} -- "${patterns[*]}"`
@@ -113,6 +146,6 @@ declare -a matches=(${fd//$'\n'/ })
 
 (( ${#matches[@]} == 0 )) && result=1 sighandler
 
-jump_or_query
+jump_or_query ${matches[@]}
 
 exit 0
