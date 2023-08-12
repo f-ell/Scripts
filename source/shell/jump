@@ -51,15 +51,12 @@ function usage {
 	    target using a fuzzy finder / external program of their choice (see
 	    OPTIONS and ENVIRONMENT VARIABLES below).
 
-	    Before jumping, $program stores jump information in /tmp/\$USER, which can
+	    Before jumping, $program stores jump information in "/tmp/\$USER", which can
 	    later be used to jump to the last invocation directory or jump target.
 
 	OPTIONS
 	    -a | --all
 	        Include hidden directories in search results.
-
-	    -b | --back
-	        Jump back to the directory $program was last invoked from.
 
 	    -d | --depth <int>
 	        Set \`fd\` search depth to <int>, default is 8.
@@ -74,6 +71,11 @@ function usage {
 
 	    -l | --follow-links
 	        Include symlinked directories in search results.
+
+	    -s | --source
+	        Jump to the source directory of $program's last invocation (i.e. \$PWD
+          $program was last called from). Reads jump information from
+          "/tmp/\$USER/${TMPSRC##*/}".
 
 	    -v | --version
 	        Print version information and exit.
@@ -144,9 +146,6 @@ function proc {
       -a|--all)
         opts[hidden]='-H'
         shift;;
-      -b|--back)
-        jump_src
-        shift;;
       -d|--depth)
         declare arg=$1
         shift
@@ -162,6 +161,9 @@ function proc {
         exit 0;;
       -l|--follow-links)
         opts[links]='-L'
+        shift;;
+      -s|--source)
+        jump_src
         shift;;
       -v|--version)
         version
