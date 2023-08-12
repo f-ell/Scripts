@@ -6,10 +6,11 @@
 
 program='j'
 author='Nico Pareigis'
-version='0.0.4'
+version='0.0.5'
 
 TMPDIR="/tmp/$USER"
 TMPSRC="$TMPDIR/j_src"
+TMPDEST="$TMPDIR/j_dest"
 
 function err {
   printf '%s: %s\n' "$program" "$2" 1>&2
@@ -17,17 +18,17 @@ function err {
 }
 
 function sighandler {
-  (( ${tmp_store-0} == 1 )) && err 0 "warning - failed writing jump information to '$1'"
-  (( ${tmp_read-0} == 1 ))  && err 2 'could not read jump information'
-  (( ${tmp_exist-0} == 1 )) && err 2 'no jump information available'
-  (( ${dir-0} == 1 ))       && err 2 "could not create directory '$1'"
-  (( ${dep-0} == 1 ))       && err 3 "dependency not met - $1"
-  (( ${int-0} == 1 ))       && err 130 'interrupt'
+  (( ${tmp_store:-0} == 1 )) && err 0 "warning - failed writing jump information to '$1'"
+  (( ${tmp_read:-0} == 1 ))  && err 2 'could not read jump information'
+  (( ${tmp_exist:-0} == 1 )) && err 2 'no jump information available'
+  (( ${dir:-0} == 1 ))       && err 2 "could not create directory '$1'"
+  (( ${dep:-0} == 1 ))       && err 3 "dependency not met - $1"
+  (( ${int:-0} == 1 ))       && err 130 'interrupt'
 
-  (( ${arg-0} == 1 )) && err 1 "unrecognized option - $1"
-  (( ${optarg-0} == 1 )) && err 1 "invalid argument for option '$1' - $2"
-  (( ${optmis-0} == 1 )) && err 1 "missing argument for option '$1'"
-  (( ${result-0} == 1 )) && err 2 'no matches found'
+  (( ${arg:-0} == 1 )) && err 1 "unrecognized option - $1"
+  (( ${optarg:-0} == 1 )) && err 1 "invalid argument for option '$1' - $2"
+  (( ${optmis:-0} == 1 )) && err 1 "missing argument for option '$1'"
+  (( ${result:-0} == 1 )) && err 2 'no matches found'
 }
 
 function usage {
@@ -103,7 +104,7 @@ function usage {
 
 	    Other:
 	        fd
-	        fzf | fzy | zf (any, depending on arguments / \$J_FUZZY)
+	        fzf | fzy | zf (optional, depending on arguments / \$J_FUZZY)
 
 	VERSION
 	    $version
@@ -144,10 +145,10 @@ function proc {
         opts[hidden]='-H'
         shift;;
       -b|--back)
-        jump_back
+        jump_src
         shift;;
       -d|--depth)
-        deerr 5 'not implemented yet'clare arg=$1
+        declare arg=$1
         shift
         arginvalid "$1" && optmis=1 sighandler $arg
         [[ $1 =~ ^[[:digit:]]+$ ]] && (( $1 > 0 )) || optarg=1 sighandler $arg $1
@@ -184,38 +185,23 @@ function proc {
 # ----------------------------------------------------------
 
 function jump {
-  store_jump_info "$1"
+  [[ ! -d "$TMPDIR" ]] && { mkdir "$TMPDIR" || dir=1 sighandler "$TMPDIR"; }
+  printf "$PWD\n" 1> "$TMPSRC" || tmp_store=1 sighandler "$TMPSRC"
+  printf "%s\n" `realpath $1` 1> "$TMPDEST" || tmp_store=1 sighandler "$TMPDEST"
+
   printf "cd \"$1\"\n"
-}
-
-function jump_back {
-  [[ ! -f $TMPSRC ]] && tmp_exist=1 sighandler $TMPSRC
-  [[ ! -r $TMPSRC ]] && tmp_read=1 sighandler $TMPSRC
-
-  read < $TMPSRC
-  printf "cd \"$REPLY\"\n"
-
   exit 0
 }
 
-function jump_or_query {
-  (( ${#@} == 1 )) && jump "$1" || query $@
+function jump_src {
+  [[ ! -f $TMPSRC ]] && tmp_exist=1 sighandler $TMPSRC
+  [[ ! -r $TMPSRC ]] && tmp_read=1 sighandler $TMPSRC
+
+  jump `< $TMPSRC`
 }
 
-function query {
-  declare dir=`printf "%s\n" $@ | ${opts[fuzzy]}`
-  [[ -z $dir ]] && int=1 sighandler
+# ----------------------------------------------------------
 
-  store_jump_info "$dir"
-  printf "cd \"$dir\"\n"
-}
-
-function store_jump_info {
-  [[ ! -d "$TMPDIR" ]] && { mkdir "$TMPDIR" || dir=1 sighandler "$TMPDIR"; }
-  printf "$PWD\n" 1> "$TMPSRC" || tmp_store=1 sighandler "$TMPSRC"
-}
-
-# execution
 declare -A opts=(
   [depth]=8
   [fuzzy]='fzf'
@@ -233,7 +219,9 @@ unset IFS
 declare -a matches=(${fd//$'\n'/ })
 
 (( ${#matches[@]} == 0 )) && result=1 sighandler
+(( ${#matches[@]} == 1 )) && dir="${matches[0]}" || {
+  dir=`printf "%s\n" ${matches[@]} | ${opts[fuzzy]}`
+  [[ -z $dir ]] && int=1 sighandler
+}
 
-jump_or_query ${matches[@]}
-
-exit 0
+jump "$dir"
