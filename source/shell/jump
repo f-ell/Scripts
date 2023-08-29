@@ -2,7 +2,7 @@
 
 program='j'
 author='Nico Pareigis'
-version='0.0.8'
+version='0.0.9'
 
 TMPDIR="/tmp/$USER"
 TMPSRC="$TMPDIR/j_src"
@@ -107,6 +107,11 @@ function usage {
 	        It should read the jump candidates as a newline separated list from
 	        STDIN and return any single entry / line, which will be used as the
 	        jump target.
+
+	    J_INVERT_ALL
+	        If this is defined and has a value of '1', inverts the behaviour of
+	        the -a flag, i.e. includes hidden files in results *unless* -a is
+	        present.
 
 	EXIT STATUS
 	      1, on argument error
@@ -247,6 +252,10 @@ proc $@
 dep realpath fd ${opts[fuzzy]}
 
 make_exclude
+
+if (( ${J_INVERT_ALL:-0} == 1 )); then
+  [[ -z ${opts[hidden]} ]] && opts[hidden]='-H' || opts[hidden]=
+fi
 
 IFS='|'
 declare fd=`fd -d${opts[depth]} -td ${opts[hidden]} ${opts[links]} ${exclude[@]} -- "${patterns[*]}"`
