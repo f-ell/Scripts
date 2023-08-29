@@ -18,7 +18,7 @@ function sighandler {
   (( ${tmp_read:-0} == 1 ))  && err 2 'could not read jump information'
   (( ${tmp_exist:-0} == 1 )) && err 2 'no jump information available'
   (( ${dir:-0} == 1 ))       && err 2 "could not create directory '$1'"
-  (( ${dep:-0} == 1 ))       && err 3 "dependency not met - $1"
+  (( ${dep:-0} == 1 ))       && err 7 "dependency not met - $1"
   (( ${int:-0} == 1 ))       && err 130 'interrupt'
 
   (( ${arg:-0} == 1 )) && err 1 "unrecognized option - $1"
@@ -111,7 +111,7 @@ function usage {
 	EXIT STATUS
 	      1, on argument error
 	      2, when no matches are found / missing jump information
-	      3, on dependency error
+	      7, on dependency error
 	    130, on keyboard interrupt
 
 	DEPENDENCIES
