@@ -92,10 +92,6 @@ function usage {
 	        Usage may result in unexpected behaviour.
 
 	ENVIRONMENT VARIABLES
-	    J_EXCLUDE
-	        Can be a colon-separated list (similar to PATH) of glob-patterns to
-	        exclude from search results (passed to \`fd\`'s '-E' option).
-
 	    J_FUZZY
 	        Can be used to specify a fuzzy-finder program other than the natively
 	        supported ones.
@@ -107,6 +103,10 @@ function usage {
 	        It should read the jump candidates as a newline separated list from
 	        STDIN and return any single entry / line, which will be used as the
 	        jump target.
+
+	    J_IGNORE
+	        Can be a colon-separated list (similar to PATH) of glob-patterns to
+	        exclude from search results (passed to \`fd\`'s '-E' option).
 
 	    J_INVERT_ALL
 	        If this is defined and has a value of '1', inverts the behaviour of
@@ -162,7 +162,7 @@ function dep {
 function make_exclude {
   declare e
   IFS=':'
-  for e in $J_EXCLUDE; do
+  for e in $J_IGNORE; do
     [[ -z $e ]] && continue
     exclude+=(-E$e)
   done
