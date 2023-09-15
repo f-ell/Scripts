@@ -2,7 +2,7 @@
 
 Authors='Nico Pareigis'
 Program=${0##*/}
-Version=0.3.8
+Version=0.3.9
 
 Usage() {
 printf "NAME
@@ -10,7 +10,7 @@ printf "NAME
     Vi, Vim, or NeoVim
 
 SYNOPSIS
-    $Program [OPTS] [DIR] [-- EXP]
+    $Program [OPTS] [DIR] [EXP]
 
 DESCRIPTION
     Recursively search through directories and select one or more files. The
@@ -134,15 +134,16 @@ AUTHOR(S)
 
 unset VerWrn FnfWrn DirErr DptErr IgnErr NoAErr NoFErr DepErr SigInt
 SigHandler() {
-  [ "$VerWrn" = 1 ] && Err   0 "'$1' version ($2) is outdated and may not work."
-  [ "$FnfWrn" = 1 ] && Err   0 "'$1' not found - skipping."
-  [ "$DirErr" = 1 ] && Err   1 "directory '$1' does not exist."
-  [ "$DptErr" = 1 ] && Err   1 'depth has to be a positive, non-zero integer.'
-  [ "$IgnErr" = 1 ] && Err   1 "file '$1' doesn't exist, isn't a valid file, or doesn't have read permissions."
-  [ "$NoAErr" = 1 ] && Err   1 "missing argument for '$1'."
-  [ "$NoFErr" = 1 ] && Err   2 'nothing to edit.'
-  [ "$DepErr" = 1 ] && Err   7 "dependency not met - $1."
-  [ "$SigInt" = 1 ] && Err 130 'keyboard interrupt.'
+  [ "$VerWrn" = 1 ] && Err   0 "'$1' version ($2) is outdated and may not function appropriately"
+  [ "$FnfWrn" = 1 ] && Err   0 "'$1' not found - skipping"
+  [ "$ArgErr" = 1 ] && Err   1 "illegal argument - '$1'"
+  [ "$DirErr" = 1 ] && Err   1 "directory '$1' does not exist"
+  [ "$DptErr" = 1 ] && Err   1 'depth has to be a positive, non-zero integer'
+  [ "$IgnErr" = 1 ] && Err   1 "file '$1' doesn't exist, isn't a valid file, or doesn't have read permissions"
+  [ "$NoAErr" = 1 ] && Err   1 "missing argument for '$1'"
+  [ "$NoFErr" = 1 ] && Err   2 'nothing to edit'
+  [ "$DepErr" = 1 ] && Err   7 "dependency not met - $1"
+  [ "$SigInt" = 1 ] && Err 130 'keyboard interrupt'
 }
 
 
@@ -319,9 +320,21 @@ while [ -n "$1" ]; do
       Err 1 "invalid argument - '$1'.";;
 
     *)
-      [ ! -d "$1" ] && DirErr=1 SigHandler "$1"
-      Dir="$1"
-      shift;;
+      for Exp in "$@"; do
+        # explicit split, argument invalid
+        [ $Exp = '--' ] && ArgErr=1 SigHandler "$1"
+      done
+
+      [ "$1" != "${1%/}" -a ! -d "$1" ] && DirErr=1 SigHandler "$1"
+      if [ -d "$1" ]; then
+        Dir="$1"
+        shift
+      fi
+
+      for Exp in "$@"; do
+        [ "$ExpList" = "${ExpList%"$Exp"*}" ] && ExpList="$ExpList$Exp / "
+      done
+      break;;
   esac
 done
 
