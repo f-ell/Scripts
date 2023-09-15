@@ -112,7 +112,7 @@ EXIT STATUS
       1, on argument error.
       2, when no file is found. Most likely caused by a poor EXP and/or a
          shallow search depth.
-      3, on dependency error.
+      7, on dependency error.
     130, on keyboard interrupt.
 
 DEPENDENCIES
@@ -141,7 +141,7 @@ SigHandler() {
   [ "$IgnErr" = 1 ] && Err   1 "file '$1' doesn't exist, isn't a valid file, or doesn't have read permissions."
   [ "$NoAErr" = 1 ] && Err   1 "missing argument for '$1'."
   [ "$NoFErr" = 1 ] && Err   2 'nothing to edit.'
-  [ "$DepErr" = 1 ] && Err   3 "dependency not met - $1."
+  [ "$DepErr" = 1 ] && Err   7 "dependency not met - $1."
   [ "$SigInt" = 1 ] && Err 130 'keyboard interrupt.'
 }
 
