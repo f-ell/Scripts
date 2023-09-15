@@ -13,17 +13,18 @@ SYNOPSIS
     $Program [OPTS] [DIR] [-- EXP]
 
 DESCRIPTION
-    Recursively search through directories and select one or more files. The sel-
-    ected file(s) will be opened in either Vi, Vim, or NeoVim (ascending prior-
-    ity). Optionally, specify a search directory and/or expression to be matched.
+    Recursively search through directories and select one or more files. The
+    selected file(s) will be opened in either Vi, Vim, or NeoVim (ascending
+    priority). Optionally, specify a search directory and/or expression to be
+    matched.
 
     DIR specifies the directory to run $Program in; the default is \$PWD.
 
-    '-- EXP' allows the user to specify multiple search expressions/filenames as
-    a space-separated list. If $Program finds a file matching the expression,
-    the file is added to a list that will be opened in the editor. If a match
-    only has a single candidate, this is done automatically. Otherwise fzf,
-    fzy, or zf (descending priority) is used to interactively select a match.
+    'EXP' allows the user to specify multiple search expressions/filenames as a
+    space-separated list. If $Program finds a file matching the expression, the
+    file is added to a list that will be opened in the editor. If a match only
+    has a single candidate, this is done automatically. Otherwise fzf, fzy, or
+    zf (descending priority) is used to interactively select a match.
 
     When using fzf for fuzzy finding, part of the user's \$FZF_DEFAULT_OPTS may
     temporarily be overwritten.
@@ -31,8 +32,8 @@ DESCRIPTION
 OPTIONS
     -d, --depth INT
       Takes a positive, non-zero integer and uses it as the search depth. A high
-      search depth may include more / better results, but can significantly in-
-      crease script runtime.
+      search depth will include more / better results, but may significantly
+      increase script runtime.
       Default search depth is 10.
 
     -E, --editor
@@ -43,18 +44,17 @@ OPTIONS
 
     -g, --no-git-ignore
       $Program excludes any file / directory matching '.git*' that it encounters
-      during the search. Using this option prevents those matches from being re-
-      moved from search results.
-      Can be used in combination with patterns, specified either in a separate
-      file, or on the command line (see -e and -p respectively), to only show
-      specific git-related results.
+      during the search. Using this option prevents those matches from being
+      removed from search results. Can be used in combination with patterns,
+      specified either in a separate file, or on the command line (see -e and -p
+      respectively), to only show specific git-related results.
 
     -i, --ignore FILE
-      Use FILE containing patterns to ignore files and directories in search re-
-      esults. Patterns support globbing characters and should be separated by
+      Use FILE containing patterns to ignore files and directories in search
+      results. Patterns support globbing characters and should be separated by
       newlines. Avoid prefixing patterns with '**/', as that's how they are
-      being matched internally and prefixing them as such would prevent exclu-
-      sion of all files / directories that are first-hand children of DIR.
+      being matched internally and prefixing them as such would prevent
+      exclusion of all files / directories that are first-hand children of DIR.
       Furthermore, patterns should consist of the shortest, unambiguous part of
       the filenames / directories one wishes to exclude.
 
