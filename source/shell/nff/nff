@@ -2,147 +2,154 @@
 
 AUTHOR='Nico Pareigis'
 PROGRAM=${0##*/}
-VERSION=0.4.0
+VERSION=0.5.0
 
 usage() {
-printf "NAME
-    $PROGRAM - (Neo)Vim-Fuzzy-Finder - find file in filesystem and open it with
-    Vi, Vim, or NeoVim
+  local IFS=
+  while read REPLY; do
+    printf "%s\n" $REPLY
+  done <<-EOF
+	NAME
+	    $PROGRAM - (Neo)Vim-Fuzzy-Finder - find file in filesystem and open it with
+	    Vi, Vim, or NeoVim
 
-SYNOPSIS
-    $PROGRAM [OPTS] [DIR] [EXP]
+	SYNOPSIS
+	    $PROGRAM [OPTS] [DIR] [EXP]
 
-DESCRIPTION
-    Recursively search through directories and select one or more files. The
-    selected file(s) will be opened in either Vi, Vim, or NeoVim (ascending
-    priority). Optionally, specify a search directory and/or expression to be
-    matched.
+	DESCRIPTION
+	    Recursively search through directories and select one or more files. The
+	    selected file(s) will be opened in either Vi, Vim, or NeoVim (ascending
+	    priority). Optionally, specify a search directory and/or expression to be
+	    matched.
 
-    DIR specifies the directory to run $PROGRAM in; the default is \$PWD.
+	    DIR specifies the directory to run $PROGRAM in; the default is \$PWD.
 
-    'EXP' allows the user to specify multiple search expressions/filenames as a
-    space-separated list. If $PROGRAM finds a file matching the expression, the
-    file is added to a list that will be opened in the editor. If a match only
-    has a single candidate, this is done automatically. Otherwise fzf, fzy, or
-    zf (descending priority) is used to interactively select a match.
+	    'EXP' allows the user to specify multiple search expressions/filenames as a
+	    space-separated list. If $PROGRAM finds a file matching the expression, the
+	    file is added to a list that will be opened in the editor. If a match only
+	    has a single candidate, this is done automatically. Otherwise fzf, fzy, or
+	    zf (descending priority) is used to interactively select a match.
 
-    When using fzf for fuzzy finding, part of the user's \$FZF_DEFAULT_OPTS may
-    temporarily be overwritten.
+	    When using fzf for fuzzy finding, part of the user's \$FZF_DEFAULT_OPTS may
+	    temporarily be overwritten.
 
-OPTIONS
-    -d, --depth INT
-      Takes a positive, non-zero integer and uses it as the search depth. A high
-      search depth will include more / better results, but may significantly
-      increase script runtime.
-      Default search depth is 10.
+	OPTIONS
+	    -d, --depth INT
+	      Takes a positive, non-zero integer and uses it as the search depth. A high
+	      search depth will include more / better results, but may significantly
+	      increase script runtime.
+	      Default search depth is 10.
 
-    -E, --editor
-      Uses \$EDITOR instead of the internally calculated editor.
+	    -E, --editor
+	      Uses \$EDITOR instead of the internally calculated editor.
 
-    -f, --zf
-      Use zf for fuzzy finding.
+	    -f, --zf
+	      Use zf for fuzzy finding.
 
-    -g, --no-git-ignore
-      $PROGRAM excludes any file / directory matching '.git*' that it encounters
-      during the search. Using this option prevents those matches from being
-      removed from search results. Can be used in combination with patterns,
-      specified either in a separate file, or on the command line (see -e and -p
-      respectively), to only show specific git-related results.
+	    -g, --no-git-ignore
+	      $PROGRAM excludes any file / directory matching '.git*' that it encounters
+	      during the search. Using this option prevents those matches from being
+	      removed from search results. Can be used in combination with patterns,
+	      specified either in a separate file, or on the command line (see -e and -p
+	      respectively), to only show specific git-related results.
 
-    -i, --ignore FILE
-      Use FILE containing patterns to ignore files and directories in search
-      results. Patterns support globbing characters and should be separated by
-      newlines. Avoid prefixing patterns with '**/', as that's how they are
-      being matched internally and prefixing them as such would prevent
-      exclusion of all files / directories that are first-hand children of DIR.
-      Furthermore, patterns should consist of the shortest, unambiguous part of
-      the filenames / directories one wishes to exclude.
+	    -i, --ignore FILE
+	      Use FILE containing patterns to ignore files and directories in search
+	      results. Patterns support globbing characters and should be separated by
+	      newlines. Avoid prefixing patterns with '**/', as that's how they are
+	      being matched internally and prefixing them as such would prevent
+	      exclusion of all files / directories that are first-hand children of DIR.
+	      Furthermore, patterns should consist of the shortest, unambiguous part of
+	      the filenames / directories one wishes to exclude.
 
-      By default $PROGRAM tries to source a file named 'exclude.nff', located in
-      the script's directory, to filter unwanted search results. If one wants to
-      not exclude any results, ensure a file with aforementioned name does not
-      exist in the script's directory, or pass '-' as FILE to this option.
+	      By default $PROGRAM tries to source a file named 'exclude.nff', located in
+	      the script's directory, to filter unwanted search results. If one wants to
+	      not exclude any results, ensure a file with aforementioned name does not
+	      exist in the script's directory, or pass '-' as FILE to this option.
 
-      EXAMPLE:
-      Assume the contents of '/path/to/first/directory/' are to be discarded but
-      contents of '/path/to/second/directory/' are to be kept as search results.
-      To achieve this, put 'first/directory' in the pattern file. Alternatively,
-      if anything matching 'directory' is to be discarded just put 'directory'
-      in the pattern file.
+	      EXAMPLE:
+	      Assume the contents of '/path/to/first/directory/' are to be discarded but
+	      contents of '/path/to/second/directory/' are to be kept as search results.
+	      To achieve this, put 'first/directory' in the pattern file. Alternatively,
+	      if anything matching 'directory' is to be discarded just put 'directory'
+	      in the pattern file.
 
-      This repository ships a very minimal 'exclude.nff' that can be built upon.
+	    -l
+	      Traverse symlinks.
 
-    -l
-      Traverse symlinks.
+	    -o, --fuzzy-opts STRING
+	      Overwrite the builtin fuzzy-finder options with STRING. STRING is passed
+	      to the finder verbatim, with no additional validity checks. Parsing will
+	      break in case STRING contains characters that mess with word-splitting,
+	      namely spaces.
 
-    -o, --fuzzy-opts STRING
-      Overwrite the builtin fuzzy-finder options with STRING. STRING is passed
-      to the finder verbatim, with no additional validity checks. Parsing will
-      break in case STRING contains characters that mess with word-splitting,
-      namely spaces.
+	      EXAMPLE:
+	      To use the environment's \$FZF_DEFAULT_OPTS with fzf, call $PROGRAM as:
+	      '$PROGRAM [-z] -o \"\$FZF_DEFUALT_OPTS\"'
 
-      EXAMPLE:
-      To use the environment's \$FZF_DEFAULT_OPTS with fzf, call $PROGRAM as:
-      '$PROGRAM [-z] -o \"\$FZF_DEFUALT_OPTS\"'
+	    -p, --pattern PATTERN
+	      Use PATTERN to exclude files / directories from being matched. Can be used
+	      more than once.
+	      See -e for an example on proper PATTERN formatting.
 
-    -p, --pattern PATTERN
-      Use PATTERN to exclude files / directories from being matched. Can be used
-      more than once.
-      See -e for an example on proper PATTERN formatting.
+	    -v, --version
+	      Output version information and exit.
 
-    -v, --version
-      Output version information and exit.
+	    -y, --fzy
+	      Use fzy for fuzzy finding.
 
-    -y, --fzy
-      Use fzy for fuzzy finding.
+	    -z, --fzf
+	      Use fzf for fuzzy finding.
 
-    -z, --fzf
-      Use fzf for fuzzy finding.
+	KNOWN BUGS
+	    Due to shell limitations, expressions / filenames containing spaces are not
+	    handled properly and should be avoided.
 
-KNOWN BUGS
-    Due to shell limitations, expressions / filenames containing spaces are not
-    handled properly and should be avoided.
+	    Specifying an option right after an option that expects an argument assumes
+	    that the second option is the argument to the first; the missing argument is
+	    not detected.
 
-    Specifying an option right after an option that expects an argument assumes
-    that the second option is the argument to the first; the missing argument is
-    not detected.
+	EXIT STATUS
+	      0, on success.
+	      1, on argument error.
+	      2, when no file is found. Most likely caused by a poor EXP and/or a
+	         shallow search depth.
+	      7, on dependency error.
+	    130, on keyboard interrupt.
 
-EXIT STATUS
-      0, on success.
-      1, on argument error.
-      2, when no file is found. Most likely caused by a poor EXP and/or a
-         shallow search depth.
-      7, on dependency error.
-    130, on keyboard interrupt.
+	DEPENDENCIES
+	    Coreutils:
+	    wc                (any)
 
-DEPENDENCIES
-    Coreutils:
-    wc                (any)
+	    Other:
+	    fd                (v8.3.2+)
+	    fzf | fzy | zf    (v0.30.0+ | v1.0+ | v0.5+)
+	    vi  | vim | nvim  (any, optional with -E)
 
-    Other:
-    fd                (v8.3.2+)
-    fzf | fzy | zf    (v0.30.0+ | v1.0+ | v0.5+)
-    vi  | vim | nvim  (any, optional with -E)
+	VERSION
+	    $VERSION
 
-VERSION
-    $VERSION
-
-AUTHOR(S)
-    $AUTHOR\n"
+	AUTHOR(S)
+	    $AUTHOR"
+	EOF
+  exit 0
 }
 
-unset verWarn fnfWarn argErr dirErr depthErr ignoreErr noArgErr noFileErr depErr sigInt
+unset editorWarn fnfWarn verWarn
+unset argErr dirErr depthErr ignoreErr noArgErr noFileErr depErr fuzzyErr sigInt
 sighandler() {
-  [ "$verWarn"   = 1 ] && err 0 "using outdated $1 version ($2), requires at least $3"
-  [ "$fnfWarn"   = 1 ] && err 0 "'$1' not found - skipping"
-  [ "$argErr"    = 1 ] && err 1 "illegal argument - '$1'"
-  [ "$dirErr"    = 1 ] && err 1 "directory '$1' does not exist"
-  [ "$depthErr"  = 1 ] && err 1 'depth must be a positive, non-zero integer'
-  [ "$ignoreErr" = 1 ] && err 1 "'$1' doesn't exist or doesn't have read permissions"
-  [ "$noArgErr"  = 1 ] && err 1 "missing argument for '$1'"
-  [ "$noFileErr" = 1 ] && err 2 'nothing to edit'
-  [ "$depErr"    = 1 ] && err 7 "dependency not met - $1"
-  [ "$sigInt"    = 1 ] && err 130 'interrupt'
+  [ "$editorWarn" = 1 ] && err 0 "'\$EDITOR' ($1) not found - falling back to internal"
+  [ "$fnfWarn"    = 1 ] && err 0 "'$1' not found - skipping"
+  [ "$verWarn"    = 1 ] && err 0 "using outdated $1 version ($2), requires at least $3"
+  [ "$argErr"     = 1 ] && err 1 "illegal argument - '$1'"
+  [ "$dirErr"     = 1 ] && err 1 "directory '$1' does not exist"
+  [ "$depthErr"   = 1 ] && err 1 'depth must be a positive, non-zero integer'
+  [ "$ignoreErr"  = 1 ] && err 1 "'$1' doesn't exist or doesn't have read permissions"
+  [ "$noArgErr"   = 1 ] && err 1 "missing argument for '$1'"
+  [ "$noFileErr"  = 1 ] && err 2 'nothing to edit'
+  [ "$depErr"     = 1 ] && err 7 "dependency not met - $1"
+  [ "$fuzzyErr"   = 1 ] && err 127 'uncaught fuzzy finder error'
+  [ "$sigInt"     = 1 ] && err 130 'interrupt'
 }
 
 err() {
@@ -227,6 +234,12 @@ zfVer() {
     && checkMajMinVer 'zf' $ver 05 || checkSemver 'zf' $ver 060
 }
 
+makeExpList() {
+  for exp in "$@"; do
+    [ "$expList" = "${expList%"$exp"*}" ] && expList="$expList$exp / "
+  done
+}
+
 
 # argument parsing ---------------------
 depth=10
@@ -242,21 +255,17 @@ symlinks=''
 editor=''
 fuzzy=''
 fuzzyOpts=''
-fzfOpts='-i -e --tiebreak=begin --reverse --prompt= --height=10 --no-color --no-info'
-fzyOpts='--lines=10 --prompt='
-zfOpts='--lines 10'
 
 while [ -n "$1" ]; do
   case "$1" in
     --)
       shift
-      for exp in "$@"; do
-        [ "$expList" = "${expList%"$exp"*}" ] && expList="$expList$exp / "
-      done
-      break;;
+      makeExpList $@
+      break
+      ;;
 
     -h|--help)
-      usage; exit 0;;
+      usage;;
 
     -d|--depth)
       verifyArg $1 $2
@@ -265,11 +274,17 @@ while [ -n "$1" ]; do
       else
         depthErr=1 sighandler
       fi
-      shift 2;;
+      shift 2
+      ;;
 
     -E|--editor)
-      editor="$EDITOR"
-      shift;;
+      if command -v $EDITOR 1>/dev/null; then
+        editor="$EDITOR"
+      else
+        editorWarn=1 sighandler $EDITOR
+      fi
+      shift
+      ;;
 
     -i|--ignore)
       verifyArg $1 $2
@@ -280,46 +295,53 @@ while [ -n "$1" ]; do
         [ ! -f "$2" -o ! -r "$2" ] && ignoreErr=1 sighandler "$2"
         ignorefile="$2"
       fi
-      shift 2;;
+      shift 2
+      ;;
 
     -f|--zf)
       fuzzy=zf
-      shift;;
+      shift
+      ;;
 
     -g|--no-git-ignore)
       unset gitignore
-      shift;;
+      shift
+      ;;
 
     -l)
       symlinks=L
-      shift;;
+      shift
+      ;;
 
     -o|--fuzzy-opts)
       verifyArg $1 $2
       fuzzyOpts="$2"
-      shift 2;;
+      shift 2
+      ;;
 
     -p|--pattern)
       verifyArg $1 $2
       pattern=${2%/}
       exclPattern="$exclPattern**/${pattern#*/},"
       unset pattern
-      shift 2;;
+      shift 2
+      ;;
 
     -v|--version)
-      printf "$PROGRAM $VERSION $AUTHOR\n";
-      exit 0;;
+      version;;
 
     -y|--fzy)
       fuzzy=fzy
-      shift;;
+      shift
+      ;;
 
     -z|--fzf)
       fuzzy=fzf
-      shift;;
+      shift
+      ;;
 
     -*)
-      err 1 "invalid argument - '$1'.";;
+      argErr=1 sighandler "$1";;
 
     *)
       for exp in "$@"; do
@@ -333,10 +355,9 @@ while [ -n "$1" ]; do
         shift
       fi
 
-      for exp in "$@"; do
-        [ "$expList" = "${expList%"$exp"*}" ] && expList="$expList$exp / "
-      done
-      break;;
+      makeExpList $@
+      break
+      ;;
   esac
 done
 
@@ -355,16 +376,20 @@ unset dep missingDeps missingCount
 ### verion checks ----------------------
 fdVer
 
-if [ $fuzzy = fzf ]; then
-  fzfVer
-  fuzzyOpts="${fuzzyOpts:-$fzfOpts}"
-elif [ $fuzzy = fzy ]; then
-  fzyVer
-  fuzzyOpts="${fuzzyOpts:-$fzyOpts}"
-else [ $fuzzy = zf ]
-  zfVer
-  fuzzyOpts="${fuzzyOpts:-$zfOpts}"
-fi
+case $fuzzy in
+  fzf)
+    fzfVer
+    fuzzyOpts="${fuzzyOpts:--i -e --tiebreak=begin --reverse --prompt= --height=10 --no-color --no-info}"
+    ;;
+  fzy)
+    fzyVer
+    fuzzyOpts="${fuzzyOpts:---lines=10 --prompt=}"
+    ;;
+  zf)
+    zfVer
+    fuzzyOpts="${fuzzyOpts:---lines 10}"
+    ;;
+esac
 
 
 ### execution --------------------------
@@ -376,7 +401,8 @@ if [ -n "$gitignore" -o -n "$exclPattern" -o -n "$ignorefile" ]; then
   [ -n "$exclPattern" ] && exclList="$exclList$exclPattern"
 
   if [ -n "$ignorefile" ]; then
-    while IFS='' read -r file; do
+    IFS=
+    while read -r file; do
       file=${file%/}
       exclList="$exclList**/${file#*/},"
     done < "$ignorefile"
@@ -404,7 +430,7 @@ while [ -n "$expList" ]; do
     if [ $code -ne 0 ]; then
       [ $fuzzy = fzf -a $code -eq 130 ] && sigInt=1 sighandler
       [ $code -eq 1 ] && sigInt=1 sighandler
-      err 130 'uncaught fuzzy finder error.'
+      fuzzyErr=1 sighandler
     fi
     unset code
   fi
