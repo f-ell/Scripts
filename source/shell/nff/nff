@@ -2,7 +2,7 @@
 
 AUTHOR='Nico Pareigis'
 PROGRAM=${0##*/}
-VERSION=0.5.0
+VERSION=0.5.1
 
 usage() {
   local IFS=
@@ -130,7 +130,7 @@ usage() {
 	    $VERSION
 
 	AUTHOR(S)
-	    $AUTHOR"
+	    $AUTHOR
 	EOF
   exit 0
 }
@@ -173,7 +173,7 @@ depAll() { # all of $@ are present
 depAny() { # any of $@ is present
   for dep in "$@"; do
     if command -v $dep 1>/dev/null; then
-      value=$dep
+      depValue=$dep
       return 0
     fi
   done
@@ -182,14 +182,18 @@ depAny() { # any of $@ is present
 
 getEditor() {
   depAny nvim vim vi
-  [ -z $value ] && missingDeps="$missingDeps, vi | (n)vim" || editor=$value
-  unset value
+  [ -z $depValue ]\
+    && missingDeps="$missingDeps, vi | (n)vim"\
+    || editor=$depValue
+  unset depValue
 }
 
 getFuzzy() {
   depAny fzf fzy zf
-  [ -z $value ] && missingDeps="$missingDeps, fzf | fzy | zf" || fuzzy=$value
-  unset value
+  [ -z $depValue ]\
+    && missingDeps="$missingDeps, fzf | fzy | zf"\
+    || fuzzy=$depValue
+  unset depValue
 }
 
 checkSemver() {
@@ -234,27 +238,78 @@ zfVer() {
     && checkMajMinVer 'zf' $ver 05 || checkSemver 'zf' $ver 060
 }
 
+makeExclList() {
+  local exclPattern ignorefile
+  if [ -n "$gitignore" -o -n "$exclPattern" -o -n "$ignorefile" ]; then
+    exclList='-E {'
+
+    [ -n "$gitignore" ] && exclList="$exclList$gitignore"
+    [ -n "$exclPattern" ] && exclList="$exclList$exclPattern"
+
+    if [ -n "$ignorefile" ]; then
+      local IFS=
+      while read -r file; do
+        file=${file%/}
+        exclList="$exclList**/${file#*/},"
+      done < "$ignorefile"
+    fi
+
+    exclList="$exclList}"
+  fi
+}
+
 makeExpList() {
   for exp in "$@"; do
     [ "$expList" = "${expList%"$exp"*}" ] && expList="$expList$exp / "
   done
 }
 
+makeFiles() {
+  local match= code= fdCmd="fd $exclList -tf -H$symlinks $ignore -d$depth -p"
+  [ -z "$expList" ] && expList="$exp"
+  while [ -n "$expList" ]; do
+    count=`$fdCmd --max-results 2 -- "${expList%% / *}" "$dir" | wc -l`
+
+    # emulate fzf's '-1' behaviour for all finders
+    if [ $count -eq 1 ]; then
+      match=`$fdCmd -- "${expList%% / *}" "$dir"`
+    elif [ $count -gt 1 ]; then
+      match=`$fdCmd -- "${expList%% / *}" "$dir" | $fuzzy $fuzzyOpts`
+      code=$?
+      if [ $code -ne 0 ]; then
+        [ $fuzzy = fzf -a $code -eq 130 ] && sigInt=1 sighandler
+        [ $code -eq 1 ] && sigInt=1 sighandler
+        fuzzyErr=1 sighandler
+      fi
+    fi
+
+    [ -n "$match" ]\
+      && files="$files$match "\
+      || fnfWarn=1 sighandler ${expList%% / *}
+
+    [ "$expList" = "$exp" ] && break
+
+    expList="${expList#* / }"
+  done
+
+  files="${files% }"
+}
+
 
 # argument parsing ---------------------
 depth=10
 dir="$PWD"
-exclPattern=''
+exclPattern=
 exp='. / '
-expList=''
+expList=
 gitignore='**/.git*,'
 ignorefile="${0%/*}/exclude.nff"
-ignore=''
-symlinks=''
+ignore=
+symlinks=
 
-editor=''
-fuzzy=''
-fuzzyOpts=''
+editor=
+fuzzy=
+fuzzyOpts=
 
 while [ -n "$1" ]; do
   case "$1" in
@@ -363,7 +418,8 @@ done
 
 
 ### dependency checks ------------------
-missingCount=0; missingDeps='';
+missingCount=0
+missingDeps=
 depAll wc fd
 
 [ -z $editor ] && getEditor
@@ -393,58 +449,10 @@ esac
 
 
 ### execution --------------------------
-# build exclude list
-if [ -n "$gitignore" -o -n "$exclPattern" -o -n "$ignorefile" ]; then
-  exclList='-E {'
+makeExclList
 
-  [ -n "$gitignore" ] && exclList="$exclList$gitignore"
-  [ -n "$exclPattern" ] && exclList="$exclList$exclPattern"
-
-  if [ -n "$ignorefile" ]; then
-    IFS=
-    while read -r file; do
-      file=${file%/}
-      exclList="$exclList**/${file#*/},"
-    done < "$ignorefile"
-  fi
-
-  exclList="$exclList}"
-  unset exclPattern ignorefile
-fi
-
-# build file-string
-files=''
-fdCmd="fd $exclList -tf -H$symlinks $ignore -d$depth -p"
-
-[ -z "$expList" ] && expList="$exp"
-while [ -n "$expList" ]; do
-  unset match
-  count=`$fdCmd --max-results 2 -- "${expList%% / *}" "$dir" | wc -l`
-
-  # emulate fzf's '-1' behaviour for all finders
-  if [ $count -eq 1 ]; then
-    match=`$fdCmd -- "${expList%% / *}" "$dir"`
-  elif [ $count -gt 1 ]; then
-    match=`$fdCmd -- "${expList%% / *}" "$dir" | $fuzzy $fuzzyOpts`
-    code=$?
-    if [ $code -ne 0 ]; then
-      [ $fuzzy = fzf -a $code -eq 130 ] && sigInt=1 sighandler
-      [ $code -eq 1 ] && sigInt=1 sighandler
-      fuzzyErr=1 sighandler
-    fi
-    unset code
-  fi
-
-  [ -n "$match" ]\
-    && files="$files$match "\
-    || fnfWarn=1 sighandler ${expList%% / *}
-
-  [ "$expList" = "$exp" ] && break
-
-  expList="${expList#* / }"
-done
-
-files="${files% }"
+files=
+makeFiles
 
 # open
 [ -n "$files" ] && $editor $files || noFileErr=1 sighandler
