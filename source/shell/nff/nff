@@ -54,13 +54,14 @@ usage() {
 	      respectively), to only show specific git-related results.
 
 	    -i, --ignore FILE
-	      Use FILE containing patterns to ignore files and directories in search
-	      results. Patterns support globbing characters and should be separated by
-	      newlines. Avoid prefixing patterns with '**/', as that's how they are
-	      being matched internally and prefixing them as such would prevent
-	      exclusion of all files / directories that are first-hand children of DIR.
-	      Furthermore, patterns should consist of the shortest, unambiguous part of
-	      the filenames / directories one wishes to exclude.
+	      Use FILE to specify patterns of files and directories to ignore in
+	      search results. Patterns are separated by newlines; globbing characters
+	      are supported. Empty lines and lines starting with '#' are ignored.
+
+	      Avoid prefixing patterns with '**/', as that's how they are matched
+	      internally. Prefixing them as such will not ignore first-hand children
+	      of DIR. Patterns should consist of the shortest, unambiguous part of the
+	      file- / directory name to ignore.
 
 	      By default $PROGRAM tries to source a file named 'exclude.nff', located in
 	      the script's directory, to filter unwanted search results. If one wants to
@@ -266,6 +267,7 @@ makeExclList() {
     if [ -n "$ignorefile" ]; then
       local IFS=
       while read -r file; do
+        [ -z "$file" -o "$file" != "${file#\#}" ] && continue
         file=${file%/}
         exclList="$exclList**/${file#*/},"
       done < "$ignorefile"
