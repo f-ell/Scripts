@@ -314,6 +314,17 @@ makeFiles() {
   files="${files% }"
 }
 
+processArgs() {
+  [ "$1" != "${1%/}" -a ! -d "$1" ] && dirErr=1 sighandler "$1"
+
+  if [ -d "$1" ]; then
+    dir="$1"
+    shift
+  fi
+
+  makeExpList $@
+}
+
 
 # argument parsing ---------------------
 depth=10
@@ -334,7 +345,7 @@ while [ -n "$1" ]; do
   case "$1" in
     --)
       shift
-      makeExpList $@
+      processArgs $@
       break
       ;;
 
@@ -423,13 +434,7 @@ while [ -n "$1" ]; do
         [ $exp = '--' ] && argErr=1 sighandler "$1"
       done
 
-      [ "$1" != "${1%/}" -a ! -d "$1" ] && dirErr=1 sighandler "$1"
-      if [ -d "$1" ]; then
-        dir="$1"
-        shift
-      fi
-
-      makeExpList $@
+      processArgs $@
       break
       ;;
   esac
