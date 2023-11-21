@@ -14,24 +14,23 @@ usage() {
 	    Vi, Vim, or NeoVim
 
 	SYNOPSIS
-	    $PROGRAM [OPTS] [DIR] [EXP]
+	    $PROGRAM [OPTS] [DIR] [NAME]...
 
 	DESCRIPTION
 	    Recursively search through directories and select one or more files. The
 	    selected file(s) will be opened in either Vi, Vim, or NeoVim (ascending
-	    priority). Optionally, specify a search directory and/or expression to be
-	    matched.
+	    priority).
 
-	    DIR specifies the directory to run $PROGRAM in; the default is PWD.
+	    DIR sets the search root directory (defaults to \$PWD).
 
-	    'EXP' allows the user to specify multiple search expressions/filenames as a
-	    space-separated list. If $PROGRAM finds a file matching the expression, the
-	    file is added to a list that will be opened in the editor. If a match only
-	    has a single candidate, this is done automatically. Otherwise fzf, fzy, or
-	    zf (descending priority) is used to interactively select a match.
+	    NAME specifies one or more filenames / expressions to search for. Each
+	    NAME corresponds to at most one file to later be opened in the editor. If
+	    a search yields more than one result, a fuzzy finder (see OPTIONS and
+	    ENVIRONMENT VARIABLES below) priority) is used to select one of the
+	    matches.
 
-      When using fzf for fuzzy finding, part of the user's FZF_DEFAULT_OPTS may
-      temporarily be overwritten.
+	    When using fzf for fuzzy finding, part of the user's FZF_DEFAULT_OPTS may
+	    temporarily be overwritten.
 
 	OPTIONS
 	    -d, --depth INT
@@ -118,7 +117,7 @@ usage() {
 	EXIT STATUS
 	      0, on success.
 	      1, on argument error.
-	      2, when no file is found. Most likely caused by a poor EXP and/or a
+	      2, when no file is found. Most likely caused by a poor NAME and/or a
 	         shallow search depth.
 	      7, on dependency error.
 	    130, on keyboard interrupt.
