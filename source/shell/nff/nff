@@ -271,9 +271,12 @@ makeExclList() {
       while read -r REPLY; do
         [ -z "$REPLY" -o "$REPLY" != "${REPLY#\#}" ] && continue
 
+        # FIX: suppress immediate glob expansion
         for path in $REPLY; do
+          path="${path#/}"
+          path="${path#./}"
           path="${path%/}"
-          exclList="$exclList**/${path#*/},"
+          exclList="$exclList**/$path,"
         done
       done < "$ignorefile"
     fi
