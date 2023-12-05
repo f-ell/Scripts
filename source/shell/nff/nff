@@ -110,6 +110,9 @@ usage() {
 	    Due to shell limitations, expressions / filenames containing spaces are not
 	    handled properly and should be avoided.
 
+	    Lines in the ignorefile (see -i) containing spaces will break parsing and
+	    result in malformed fd-expressions.
+
 	    Specifying an option right after an option that expects an argument assumes
 	    that the second option is the argument to the first; the missing argument is
 	    not detected.
@@ -256,7 +259,6 @@ zfVer() {
 }
 
 makeExclList() {
-  local exclPattern ignorefile
   if [ -n "$gitignore" -o -n "$exclPattern" -o -n "$ignorefile" ]; then
     exclList='-E {'
 
@@ -265,10 +267,14 @@ makeExclList() {
 
     if [ -n "$ignorefile" ]; then
       local IFS=
-      while read -r file; do
-        [ -z "$file" -o "$file" != "${file#\#}" ] && continue
-        file=${file%/}
-        exclList="$exclList**/${file#*/},"
+      # FIX: escape spaces
+      while read -r REPLY; do
+        [ -z "$REPLY" -o "$REPLY" != "${REPLY#\#}" ] && continue
+
+        for path in $REPLY; do
+          path="${path%/}"
+          exclList="$exclList**/${path#*/},"
+        done
       done < "$ignorefile"
     fi
 
