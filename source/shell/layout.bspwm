@@ -11,4 +11,4 @@ function layout {
 layout
 while read; do
   layout
-done < <(bspc subscribe desktop_layout)
+done < <(bspc subscribe desktop_focus desktop_layout)
