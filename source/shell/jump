@@ -37,13 +37,14 @@ function usage {
 	    $program - find and jump to child-directories
 
 	SYNOPSIS
+	    $program [<options>] [<pattern>]
 	    $program [<options>] [<directory>] [<pattern>...]
 
 	DESCRIPTION
 	    $program uses \`fd\` to find jump candidates.
-      <directory> specifies the directory in which to search for candidates.
-      <pattern> may be any regex understood by \`fd\` (uses smart-case by
-      default).
+	    <directory> specifies the directory in which to search for candidates.
+	    <pattern> may be any regex understood by \`fd\` (uses smart-case by
+	    default).
 
 	    If there is more than one jump candidate, the user may select the desired
 	    target using a fuzzy finder / external program of their choice (see
@@ -232,10 +233,10 @@ function proc {
 
       --|*)
         [[ $1 == -- ]] && shift
-        [[ $1 =~ /$ && ! -d $1 ]] && base=1 sighandler "$1"
+        [[ $# -gt 1 && ! -d $1 ]] && base=1 sighandler "$1"
 
-        if [[ -d $1 ]]; then
-          opts[base]="$1"
+        if [[ $# -gt 1 && -d $1 ]]; then
+          opts[base]=`realpath "$1"`
           shift
         fi
 
@@ -254,7 +255,7 @@ function jump {
 
     printf "$BASE\n" 1> "$TMPSRC"\
       || tmp_store=1 sighandler "$TMPSRC"
-    printf "%s\n" `realpath $2` 1> "$TMPDEST"\
+    printf "%s\n" `realpath ${2#/${opts[base]}}` 1> "$TMPDEST"\
       || tmp_store=1 sighandler "$TMPDEST"
   fi
 
@@ -272,7 +273,7 @@ function _jump {
 # ----------------------------------------------------------
 
 declare -A opts=(
-  [base]=$PWD
+  [base]="$BASE"
   [depth]=8
   [fuzzy]="${J_FUZZY:-fzf}"
   [hidden]=
