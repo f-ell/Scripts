@@ -1,0 +1,144 @@
+#!/usr/bin/perl
+use warnings;
+use strict;
+
+use feature 'signatures';
+$\ = "\n";
+
+# FIX: handle unmounting when other mountpoints exist?
+
+sub err ( $code, $str, ) {
+  printf( "ud2: %s\n", $str );
+  exit($code) if $code > 0;
+}
+
+sub log ($str) {
+  printf( ":: %s\n", $str );
+}
+
+sub path_contains ($binary) {
+  my @path = split( ':', $ENV{PATH} // '' );
+
+  return 1 if !@path;
+
+  for (@path) {
+    chop     if m{/$};
+    return 1 if -x $_ . '/' . $binary;
+  }
+
+  return 0;
+}
+
+sub dep (@deps) {
+  my @missing;
+  for (@deps) { push( @missing, $_ ) if !path_contains($_); }
+  err( 4, 'dependency not met: ' . join( ', ', @deps ) ) if @missing;
+}
+
+# ------------------------------------------------------------------------------
+
+sub get_dm_map ($dev) {
+  $dev =~ s/(\d+)$//;    # FIX: does not work for nvme
+
+  my $dname = "/sys/block/$dev";
+  $dname .= "/$dev$1" if $1;
+  $dname .= '/holders';
+
+  opendir( DH, $dname ) || err( 2, 'failed to open dirhandle: ' . $dname );
+  my @map = grep( { !/^\./ } readdir(DH) );
+  closedir(DH) || err( 2, 'failed to close dirhandle: ' . $dname );
+
+  return $map[0];
+}
+
+sub get_dm_mapped_name ($dev) {
+  my $fname = "/sys/block/$dev/dm/name";
+
+  return $dev if !-e $fname;
+
+  open( FH, '<', $fname )
+    || err( 2, "failed to open filehandle: $fname" );
+
+  my $name = 'mapper/' . <FH>;
+  chomp($name);
+
+  close(FH)
+    || err( 2, "failed to close filehandle: $fname" );
+
+  return $name;
+}
+
+sub is_crypto ($dev) {
+  return grep( /IdUsage:\s+crypto$/, `udisksctl info -b /dev/$dev` );
+}
+
+sub is_locked ($crypt) {
+  return length( get_dm_map($crypt) // '' ) == 0;
+}
+
+sub is_mounted ($dev) {
+  my $name = get_dm_mapped_name($dev);
+
+  open( FH, '<', '/proc/mounts' )
+    || err( 2, 'failed to open filehandle: /proc/mounts' );
+  my $mnt = ( grep( { m{^/dev/$name\s} } <FH> ) )[0];
+  close(FH) || err( 2, 'failed to close filehandle: /proc/mounts' );
+
+  return !!$mnt;
+}
+
+sub try_unlock ($crypt) {
+  &log("unlocking $crypt");
+
+  $_ = `udisksctl unlock -b /dev/$crypt &>/dev/null`;
+  err( 1, "unlock fatal: $_" ) if $? > 0;
+
+  &log("mapped $crypt as ${\get_dm_map($crypt)}");
+}
+
+sub try_mount ($dev) {
+  err( 1, "not mountable: $dev" )
+    if !grep( /IdUsage:\s+filesystem/, `udisksctl info -b /dev/$dev` );
+
+  &log("mounting $dev");
+
+  $_ = `udisksctl mount -b /dev/$dev --no-user-interaction 2>&1`;
+  chomp;
+  s/GDBus\.Error:.+?:\s//;
+  err( 1, "mount fatal: $_" ) if $? > 0;
+
+  m{Mounted /dev/$dev at (.+)$};
+  &log("$dev mounted at $1");
+}
+
+sub try_unmount ($dev) {
+  &log("unmounting $dev");
+
+  $_ = `udisksctl unmount -b /dev/$dev --no-user-interaction 2>&1`;
+  chomp;
+  s/GDBus\.Error:.+?:\s//;
+  err( 1, "unmount fatal: $_" ) if $? > 0;
+}
+
+# ------------------------------------------------------------------------------
+
+dep('udisksctl');
+
+# TODO: mount newest device instead
+err( 1, 'expected exactly one target' ) if !scalar(@ARGV) == 1;
+
+my $target = shift =~ s{^/dev/}{}r;
+err( 1, 'not found: ' . $target )          if !-e '/dev/' . $target;
+err( 1, 'not a block device: ' . $target ) if !-b '/dev/' . $target;
+
+if ( !is_crypto($target) ) {
+  is_mounted($target) ? try_unmount($target) : try_mount($target);
+  exit(0);
+}
+
+my $mapped = 0;
+is_locked($target) ? try_unlock($target) : ( $mapped = 1 );
+
+my $dev = get_dm_map($target);
+&log("$target is mapped as $dev") if $mapped;
+is_mounted($dev) ? try_unmount($dev) : try_mount($dev);
