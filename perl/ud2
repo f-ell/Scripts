@@ -8,7 +8,7 @@ $\ = "\n";
 # FIX: handle unmounting when other mountpoints exist?
 # FIX: nvme support
 
-sub err ( $code, $str, ) {
+sub err ( $code, $str ) {
   printf( "ud2: %s\n", $str );
   exit($code) if $code > 0;
 }
@@ -18,13 +18,9 @@ sub log ($str) {
 }
 
 sub path_contains ($binary) {
-  my @path = split( ':', $ENV{PATH} // '' );
-
-  return 1 if !@path;
-
-  for (@path) {
+  for ( split( ':', $ENV{PATH} // '' ) ) {
     chop     if m{/$};
-    return 1 if -x $_ . '/' . $binary;
+    return 1 if -x "$_/$binary";
   }
 
   return 0;
@@ -33,7 +29,7 @@ sub path_contains ($binary) {
 sub dep (@deps) {
   my @missing;
   for (@deps) { push( @missing, $_ ) if !path_contains($_); }
-  err( 4, 'dependency not met: ' . join( ', ', @deps ) ) if @missing;
+  err( 4, "dependency not met: ${\join( ', ', @deps )}" ) if @missing;
 }
 
 # ------------------------------------------------------------------------------
@@ -41,9 +37,9 @@ sub dep (@deps) {
 sub get_default_dev() {
   my $dname = '/dev/disk/by-id';
 
-  opendir( DH, $dname ) || die;
-  my @ids = grep( !/^\./ && !/-part\d+$/, readdir(DH) );
-  closedir(DH) || die;
+  opendir( DH, $dname ) || err( 2, "failed to open dirhandle: $dname" );
+  my @ids = grep( !/^\./ && !/-part\d+$/ && !/^dm-/, readdir(DH) );
+  closedir(DH) || err( 2, "failed to close dirhandle: $dname" );
   err( 2, 'failed to retrieve default device' ) if !@ids;
 
   my ( $mtime, $dev ) = ( 0, '' );
@@ -55,7 +51,7 @@ sub get_default_dev() {
     }
   }
 
-  return $dev . '1';
+  return $dev;
 }
 
 sub get_dm_map ($dev) {
@@ -65,9 +61,9 @@ sub get_dm_map ($dev) {
   $dname .= "/$dev$1" if $1;
   $dname .= '/holders';
 
-  opendir( DH, $dname ) || err( 2, 'failed to open dirhandle: ' . $dname );
+  opendir( DH, $dname ) || err( 2, "failed to open dirhandle: $dname" );
   my @map = grep( !/^\./, readdir(DH) );
-  closedir(DH) || err( 2, 'failed to close dirhandle: ' . $dname );
+  closedir(DH) || err( 2, "failed to close dirhandle: $dname" );
 
   return $map[0];
 }
@@ -80,7 +76,7 @@ sub get_dm_mapped_name ($dev) {
   open( FH, '<', $fname )
     || err( 2, "failed to open filehandle: $fname" );
 
-  my $name = 'mapper/' . <FH>;
+  my $name = "mapper/${\<FH>}";
   chomp($name);
 
   close(FH)
@@ -111,7 +107,9 @@ sub is_mounted ($dev) {
 sub try_unlock ($crypt) {
   &log("unlocking $crypt");
 
-  $_ = `udisksctl unlock -b /dev/$crypt &>/dev/null`;
+  $_ = `udisksctl unlock -b /dev/$crypt 2>&1`;
+  chomp;
+  s/GDBus\.Error:.+?:\s//;
   err( 1, "unlock fatal: $_" ) if $? > 0;
 
   &log("mapped $crypt as ${\get_dm_map($crypt)}");
@@ -147,9 +145,17 @@ dep('udisksctl');
 
 err( 1, 'too many arguments' ) if scalar(@ARGV) > 1;
 
-my $target = @ARGV ? shift =~ s{^/dev/}{}r : get_default_dev();
-err( 1, 'not found: ' . $target )          if !-e '/dev/' . $target;
-err( 1, 'not a block device: ' . $target ) if !-b '/dev/' . $target;
+my $target;
+if (@ARGV) {
+  $target = shift =~ s{^/dev/}{}r;
+}
+else {
+  $target = get_default_dev();
+  $target .= '1' if !is_crypto($target);
+}
+
+err( 1, "not found: $target" )          if !-e "/dev/$target";
+err( 1, "not a block device: $target" ) if !-b "/dev/$target";
 
 if ( !is_crypto($target) ) {
   is_mounted($target) ? try_unmount($target) : try_mount($target);
