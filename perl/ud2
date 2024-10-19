@@ -6,6 +6,7 @@ use feature 'signatures';
 $\ = "\n";
 
 # FIX: handle unmounting when other mountpoints exist?
+# FIX: nvme support
 
 sub err ( $code, $str, ) {
   printf( "ud2: %s\n", $str );
@@ -37,15 +38,35 @@ sub dep (@deps) {
 
 # ------------------------------------------------------------------------------
 
+sub get_default_dev() {
+  my $dname = '/dev/disk/by-id';
+
+  opendir( DH, $dname ) || die;
+  my @ids = grep( !/^\./ && !/-part\d+$/, readdir(DH) );
+  closedir(DH) || die;
+  err( 2, 'failed to retrieve default device' ) if !@ids;
+
+  my ( $mtime, $dev ) = ( 0, '' );
+
+  foreach (@ids) {
+    if ( $mtime < ( stat("$dname/$_") )[9] ) {
+      $mtime = ( stat(_) )[9];
+      $dev   = ( split( '/', readlink("$dname/$_") ) )[-1];
+    }
+  }
+
+  return $dev . '1';
+}
+
 sub get_dm_map ($dev) {
-  $dev =~ s/(\d+)$//;    # FIX: does not work for nvme
+  $dev =~ s/(\d+)$//;
 
   my $dname = "/sys/block/$dev";
   $dname .= "/$dev$1" if $1;
   $dname .= '/holders';
 
   opendir( DH, $dname ) || err( 2, 'failed to open dirhandle: ' . $dname );
-  my @map = grep( { !/^\./ } readdir(DH) );
+  my @map = grep( !/^\./, readdir(DH) );
   closedir(DH) || err( 2, 'failed to close dirhandle: ' . $dname );
 
   return $map[0];
@@ -81,7 +102,7 @@ sub is_mounted ($dev) {
 
   open( FH, '<', '/proc/mounts' )
     || err( 2, 'failed to open filehandle: /proc/mounts' );
-  my $mnt = ( grep( { m{^/dev/$name\s} } <FH> ) )[0];
+  my $mnt = ( grep( m{^/dev/$name\s}, <FH> ) )[0];
   close(FH) || err( 2, 'failed to close filehandle: /proc/mounts' );
 
   return !!$mnt;
@@ -124,10 +145,9 @@ sub try_unmount ($dev) {
 
 dep('udisksctl');
 
-# TODO: mount newest device instead
-err( 1, 'expected exactly one target' ) if !scalar(@ARGV) == 1;
+err( 1, 'too many arguments' ) if scalar(@ARGV) > 1;
 
-my $target = shift =~ s{^/dev/}{}r;
+my $target = @ARGV ? shift =~ s{^/dev/}{}r : get_default_dev();
 err( 1, 'not found: ' . $target )          if !-e '/dev/' . $target;
 err( 1, 'not a block device: ' . $target ) if !-b '/dev/' . $target;
 
