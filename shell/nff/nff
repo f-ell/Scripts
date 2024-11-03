@@ -1,490 +1,503 @@
-#!/bin/sh
+#!/bin/bash
 
-AUTHOR='Nico Pareigis'
-PROGRAM=${0##*/}
-VERSION=0.6.0
+typeset -A NFF_META=(
+  [PROGRAM]="${0##*/}"
+  [VERSION]='2.0'
+  [VERBOSE]=1
+)
+typeset -A _clr=(
+  [reset]='\e[0m'
+  [info]='\e[1;38;5;6m'
+  [warn]='\e[1;38;5;3m'
+)
 
-usage() {
-  local IFS=
-  while read REPLY; do
-    printf "%s\n" $REPLY
+function print_help() {
+  while read; do
+    printf '%s\n' "$REPLY"
   done <<-EOF
 	NAME
-	    $PROGRAM - (Neo)Vim-Fuzzy-Finder - find file in filesystem and open it with
-	    Vi, Vim, or NeoVim
+	    nff - Neovim-Fuzzy-Finder - find and open files with Vi, Vim, or Neovim.
 
 	SYNOPSIS
-	    $PROGRAM [OPTS] [DIR] [NAME]...
+	    nff [OPTS] [DIR] [PATTERN]...
 
 	DESCRIPTION
-	    Recursively search through directories and select one or more files. The
-	    selected file(s) will be opened in either Vi, Vim, or NeoVim (ascending
+	    nff uses fd to recursively look for all files matching PATTERN in the
+	    current directory or DIR. When more than one match is found, fzf, fzy, or
+	    zf (descending priority) are used to select one of them. The selected
+	    matches are opened for editing in either Vi, Vim, or Neovim (ascending
 	    priority).
 
-	    DIR sets the search root directory (defaults to \$PWD).
-
-	    NAME specifies one or more filenames / expressions to search for. Each
-	    NAME corresponds to at most one file to later be opened in the editor. If
-	    a search yields more than one result, a fuzzy finder (see OPTIONS and
-	    ENVIRONMENT VARIABLES below) priority) is used to select one of the
-	    matches.
-
-	    When using fzf for fuzzy finding, part of the user's FZF_DEFAULT_OPTS may
-	    temporarily be overwritten.
+	    To override the executables used for fuzzy finding and editing, see
+	    OPTIONS and ENVIRONMENT VARIABLES below.
 
 	OPTIONS
-	    -d, --depth INT
-	      Takes a positive, non-zero integer and uses it as the search depth. A high
-	      search depth will include more / better results, but may significantly
-	      increase script runtime.
-	      Default search depth is 10.
+	    -d INT, --depth INT
+	        Set maximum search depth to INT. Default: 10.
+
+	    -e PATTERN, --exclude PATTERN
+	        Exclude PATTERN from search results. May be used multiple times. These
+	        patterns are merged with the ones specified in the exclude-file (see
+	        EXCLUDE FILE below).
 
 	    -E, --editor
-	      Uses EDITOR instead of the internally calculated editor.
+	        Use EDITOR as the executable to open files. Also see ENVIRONMENT
+	        VARIABLES below.
 
 	    -f, --zf
-	      Use zf for fuzzy finding.
+	        Use zf for fuzzy finding.
 
-	    -g, --no-git-ignore
-	      $PROGRAM excludes any file / directory matching '.git*' that it encounters
-	      during the search. Using this option prevents those matches from being
-	      removed from search results. Can be used in combination with patterns,
-	      specified either in a separate file, or on the command line (see -e and -p
-	      respectively), to only show specific git-related results.
+	    -h, --help
+	        Print help and exit.
 
-	    -i, --ignore FILE
-	      Use FILE to specify patterns of files and directories to ignore in
-	      search results. Patterns are separated by newlines; globbing characters
-	      are supported. Empty lines and lines starting with '#' are ignored.
+	    -I, --no-ignore
+	        Include usually ignored files in search results. See fd(1).
 
-	      Avoid prefixing patterns with '**/', as that's how they are matched
-	      internally. Prefixing them as such will not ignore first-hand children
-	      of DIR. Patterns should consist of the shortest, unambiguous part of the
-	      file- / directory name to ignore.
+	    -H, --show-hidden
+	        Include hidden files in search results.
 
-	      By default $PROGRAM tries to source a file named 'exclude.nff', located in
-	      the script's directory, to filter unwanted search results. If one wants to
-	      not exclude any results, ensure a file with aforementioned name does not
-	      exist in the script's directory, or pass '-' as FILE to this option.
+	    -L, --no-symlinks
+	        Exclude symlinks from search results.
 
-	      EXAMPLE:
-	      Assume the contents of '/path/to/first/directory/' are to be discarded but
-	      contents of '/path/to/second/directory/' are to be kept as search results.
-	      To achieve this, put 'first/directory' in the pattern file. Alternatively,
-	      if anything matching 'directory' is to be discarded just put 'directory'
-	      in the pattern file.
+	    -o OPTS, --fuzzy-opts OPTS
+	        Pass OPTS as options to the fuzzy finder.
 
-	    -l
-	      Traverse symlinks.
+	    -s, --silent
+	        Suppress all log output.
 
-	    -o, --fuzzy-opts STRING
-	      Overwrite the builtin fuzzy-finder options with STRING. STRING is passed
-	      to the finder verbatim, with no additional validity checks. Parsing will
-	      break in case STRING contains characters that mess with word-splitting,
-	      namely spaces.
-
-	      EXAMPLE:
-        To use the environment's FZF_DEFAULT_OPTS with fzf, call $PROGRAM as:
-        '$PROGRAM [-z] -o \"\$FZF_DEFUALT_OPTS\"'
-
-	    -p, --pattern PATTERN
-	      Use PATTERN to exclude files / directories from being matched. Can be used
-	      more than once.
-	      See -e for an example on proper PATTERN formatting.
-
-	    -v, --version
-	      Output version information and exit.
+	    -V, --version
+	        Print version information and exit.
 
 	    -y, --fzy
-	      Use fzy for fuzzy finding.
+	        Use fzy for fuzzy finding.
 
 	    -z, --fzf
-	      Use fzf for fuzzy finding.
+	        Use fzf for fuzzy finding.
+
+	EXCLUDE FILE
+	    nff looks for a file called exclude.nff in its base directory. When
+	    present, each line in the file will be passed as an exlude-pattern to fd.
+	    Empty lines and lines starting with # are ignored.
 
 	ENVIRONMENT VARIABLES
-	    NFF_FUZZY
-	        May be any of fzf, fzy, or zf. When set, will be used as the default
-	        fuzzy finder in case no overriding command line options are specified.
+	    NFF_EDITOR     - Program to open files with. Supports word splitting.
+	    NFF_FUZZY      - Program to use as fuzzy finder.
+	    NFF_FUZZY_OPTS - Options passed to fuzzy finder.
 
 	KNOWN BUGS
-	    Due to shell limitations, expressions / filenames containing spaces are not
-	    handled properly and should be avoided.
-
-	    Lines in the ignorefile (see -i) containing spaces will break parsing and
-	    result in malformed fd-expressions.
-
-	    Specifying an option right after an option that expects an argument assumes
-	    that the second option is the argument to the first; the missing argument is
-	    not detected.
+	    The current argument parsing implementation does not handle missing option
+	    arguments properly.
 
 	EXIT STATUS
-	      0, on success.
-	      1, on argument error.
-	      2, when no file is found. Most likely caused by a poor NAME and/or a
-	         shallow search depth.
-	      7, on dependency error.
-	    130, on keyboard interrupt.
+	    0   - Success
+	    1   - Argument error
+	    2   - Dependency error
+	    4   - No matches found
+	    7   - Uncaught fuzzy finder error
+	    130 - Interrupt
 
 	DEPENDENCIES
-	    Coreutils:
-	    wc                (any)
-
-	    Other:
-	    fd                (v8.3.2+)
-	    fzf | fzy | zf    (v0.30.0+ | v1.0+ | v0.5+)
-	    vi  | vim | nvim  (any, optional with -E)
+	    fd               (8.3.2+)
+	    fzf | fzy | zf   (0.30.0+ | 1.0+ | 0.5+)
+	    vi  | vim | nvim (optional with -E)
 
 	VERSION
-	    $VERSION
+	    ${NFF_META[VERSION]}
 
-	AUTHOR(S)
-	    $AUTHOR
+	AUTHOR
+	    Nico Pareigis
 	EOF
-  exit 0
 }
 
-unset editorWarn fnfWarn verWarn
-unset argErr dirErr depthErr ignoreErr nffFuzzyErr noArgErr noFileErr depErr fuzzyErr sigInt
-sighandler() {
-  [ "$editorWarn"  = 1 ] && err 0 "EDITOR ($1) not found - falling back to internal"
-  [ "$fnfWarn"     = 1 ] && err 0 "'$1' not found - skipping"
-  [ "$verWarn"     = 1 ] && err 0 "using outdated $1 version ($2), requires at least $3"
-  [ "$argErr"      = 1 ] && err 1 "illegal argument - '$1'"
-  [ "$dirErr"      = 1 ] && err 1 "directory '$1' does not exist"
-  [ "$depthErr"    = 1 ] && err 1 'depth must be a positive, non-zero integer'
-  [ "$ignoreErr"   = 1 ] && err 1 "'$1' doesn't exist or doesn't have read permissions"
-  [ "$nffFuzzyErr" = 1 ] && err 1 "illegal NFF_FUZZY value - $1"
-  [ "$noArgErr"    = 1 ] && err 1 "missing argument for '$1'"
-  [ "$noFileErr"   = 1 ] && err 2 'nothing to edit'
-  [ "$depErr"      = 1 ] && err 7 "dependency not met - $1"
-  [ "$fuzzyErr"    = 1 ] && err 127 'uncaught fuzzy finder error'
-  [ "$sigInt"      = 1 ] && err 130 'interrupt'
+function print_version() {
+  printf "nff ${NFF_META[VERSION]} Nico Pareigis\n"
 }
 
-err() {
-  printf '%s: %s\n' "$PROGRAM" "$2" 1>&2
-  [ $1 -gt 0 ] && exit $1
+function log() {
+  (( ${NFF_META[VERBOSE]} != 1 )) && return
+  printf '%b::%b %s\n' "${_clr[$1]}" "${_clr[reset]}" "$2"
 }
 
-verifyArg() {
-  [ -z "$2" -o "$2" = -- ] && noArgErr=1 sighandler $1
+function err() {
+  printf '%s: %s\n' "${NFF_META[PROGRAM]}" "$2" 1>&2
+  (( $1 > 0 )) && exit $1
 }
 
-depAll() { # all of $@ are present
-  for dep in "$@"; do
-    if ! command -v $dep 1>/dev/null; then
-      missingCount=$((missingCount+1))
-      missingDeps="$missingDeps, $dep"
+# ------------------------------------------------------------------------------
+
+function _shift() {
+  typeset -n arr=$1
+  arr=("${arr[@]:${2:-1}}")
+}
+
+function index() {
+  typeset -n arr=$1
+
+  typeset -i i
+  for (( i=0; i<${#arr[@]}; i++ )); do
+    [[ ${arr[$i]} == $2 ]] && return $i
+  done
+
+  return 255
+}
+
+function contains() {
+  typeset -n arr=$1
+
+  typeset i
+  for i in "${arr[@]}"; do
+    [[ $i == $2 ]] && return 0
+  done
+  return 1
+}
+
+function filter_uniq() {
+  typeset -n arr=$1
+  typeset -a tmp=()
+
+  typeset i
+  for i in "${arr[@]}"; do
+    contains tmp "$i" || tmp+=("$i")
+  done
+
+  arr=("${tmp[@]}")
+}
+
+# ------------------------------------------------------------------------------
+
+function dep_all() {
+  typeset -a missing
+
+  typeset d
+  for d in "$@"; do
+    if ! command -v "$d" 1>/dev/null; then
+      missing+=("$d")
     fi
   done
+
+  local IFS=,
+  (( ${#missing[@]} > 0 )) && err 2 "dependency not met: ${missing[*]}"
 }
 
-depAny() { # any of $@ is present
-  for dep in "$@"; do
-    if command -v $dep 1>/dev/null; then
-      depValue=$dep
-      return 0
+function dep_any() {
+  typeset -n out=$1
+  shift
+  typeset -a dependencies
+
+  typeset d
+  for d in "$@"; do
+    if command -v "$d" 1>/dev/null; then
+      out="$d"
+      return
     fi
+
+    dependencies+=("$d")
   done
-  missingCount=$((missingCount+1))
+
+  local IFS=,
+  err 2 "dependency not met - need one of: ${dependencies[*]}"
 }
 
-getEditor() {
-  depAny nvim vim vi
-  [ -z $depValue ]\
-    && missingDeps="$missingDeps, vi | (n)vim"\
-    || editor=$depValue
-  unset depValue
+function semantic_version() {
+  typeset has="$1" want="$2"
+  typeset -i i
+
+  [[ $has =~ ^([[:digit:]]+)\.([[:digit:]]+)\.([[:digit:]]+)$ ]] || return 1
+  typeset -a has_ver=(${BASH_REMATCH[@]:1})
+  [[ $want =~ ^([[:digit:]]+)\.([[:digit:]]+)\.([[:digit:]]+)$ ]] || return 1
+  typeset -a want_ver=(${BASH_REMATCH[@]:1})
+
+  typeset -i all_eq=1
+  for (( i=0; i<3; i++ )); do
+    (( ${has_ver[$i]} != ${want_ver[$i]} )) && { all_eq=0; break; }
+  done
+  (( all_eq == 1 )) && return 0
+
+  typeset -i prev_ge=1
+  for (( i=0; i<3; i++ )); do
+    (( ${has_ver[$i]} < ${want_ver[$i]} )) && { prev_ge=0; continue; }
+    (( ${has_ver[$i]} > ${want_ver[$i]} && prev_ge == 1 )) && return 0
+  done
+
+  return 1
 }
 
-getFuzzy() {
-  [ -n "$NFF_FUZZY" ] && {
-    case $NFF_FUZZY in
-      fzf|fzy|zf)
-        fuzzy=$NFF_FUZZY;;
-      *)
-        nffFuzzyErr=1 sighandler $NFF_FUZZY;;
+function majmin_version() {
+  typeset has="$1" want="$2"
+  typeset -i i
+
+  [[ $has =~ ^([[:digit:]]+)\.([[:digit:]]+)$ ]] || return 1
+  typeset -a has_ver=(${BASH_REMATCH[@]:1})
+  [[ $want =~ ^([[:digit:]]+)\.([[:digit:]]+)$ ]] || return 1
+  typeset -a want_ver=(${BASH_REMATCH[@]:1})
+
+  typeset -i all_eq=1
+  for (( i=0; i<2; i++ )); do
+    (( ${has_ver[$i]} != ${want_ver[$i]} )) && { all_eq=0; break; }
+  done
+  (( all_eq == 1 )) && return 0
+
+  typeset -i prev_ge=1
+  for (( i=0; i<2; i++ )); do
+    (( ${has_ver[$i]} < ${want_ver[$i]} )) && { prev_ge=0; continue; }
+    (( ${has_ver[$i]} > ${want_ver[$i]} && prev_ge == 1 )) && return 0
+  done
+
+  return 1
+}
+
+function ensure_version() {
+  typeset cmd
+  for cmd in "$@"; do
+    case $cmd in
+      fd)
+        typeset -a version=(`fd --version`)
+        semantic_version ${version[1]} 8.3.2 \
+          || log warn "version mismatch: $cmd (has ${version[1]}, want 8.3.2+)"
+        ;;
+      fzf)
+        typeset -a version=(`fzf --version`)
+        semantic_version ${version[0]} 0.30.0 \
+          || log warn "version mismatch: $cmd (has ${version[0]}, want 0.30.0+)"
+        ;;
+      fzy)
+        typeset -a version=(`fzy --version`)
+        majmin_version ${version[1]} 1.0 \
+          || log warn "version mismatch: $cmd (has ${version[1]}, want 1.0+)"
+        ;;
+      zf)
+        # zf >= 0.9.0 writes version information to stderr
+        # versions between 0.1.0 and 0.6.0 used <MAJOR>.<MINOR> format
+        typeset -a version=(`zf --version 2>&1`)
+        (
+          semantic_version ${version[1]} 0.6.0 \
+            || majmin_version ${version[1]} 0.5
+        ) || log warn "version mismatch: $cmd (has ${version[1]}, want 0.5+|0.6.0+)"
+        ;;
+      *) log warn "using unsupported dependency: $cmd"
     esac
-    return 0
-  }
-
-  depAny fzf fzy zf
-  [ -z $depValue ]\
-    && missingDeps="$missingDeps, fzf | fzy | zf"\
-    || fuzzy=$depValue
-  unset depValue
-}
-
-checkSemver() {
-  local dep curVer minVer major minor patch
-  dep=$1; curVer=$2; minVer=$3
-  major=${curVer%%.*}
-  minor=${curVer#*.}; minor=${minor%.*}
-  patch=${curVer##*.}
-  [ $major$minor$patch -lt $minVer ] && verWarn=1 sighandler $dep $curVer $minVer
-}
-
-checkMajMinVer() {
-  local dep curVer minVer
-  dep=$1; curVer=$2; minVer=$3
-  maj=${curVer%.*}
-  min=${curVer#*.}
-  [ $maj$min -lt $minVer ] && verWarn=1 sighandler $dep $curVer $minVer
-}
-
-fdVer() {
-  local ver=`fd --version`
-  checkSemver 'fd' ${ver#fd } 832
-}
-
-fzfVer() {
-  local ver=`fzf --version`
-  checkSemver 'fzf' ${ver% *} 0300
-}
-
-fzyVer() {
-  local ver=`fzy --version`; ver=${ver#fzy }
-  checkMajMinVer 'fzy' ${ver% ©*} 10
-}
-
-zfVer() {
-  local ver compat
-  # redirection required for zf versions >=0.9.0
-  ver=`zf --version 2>&1`; ver=${ver#zf }; ver=${ver%% *}
-
-  # compatibility with zf versions between 0.1.0 and 0.6.0
-  compat=${ver#*.}; compat=${compat%.*}
-  [ $compat -gt 0 -a $compat -le 5 ]\
-    && checkMajMinVer 'zf' $ver 05 || checkSemver 'zf' $ver 060
-}
-
-makeExclList() {
-  if [ -n "$gitignore" -o -n "$exclPattern" -o -n "$ignorefile" ]; then
-    exclList='-E {'
-
-    [ -n "$gitignore" ] && exclList="$exclList$gitignore"
-    [ -n "$exclPattern" ] && exclList="$exclList$exclPattern"
-
-    if [ -n "$ignorefile" ]; then
-      local IFS=
-      # FIX: escape spaces
-      while read -r REPLY; do
-        [ -z "$REPLY" -o "$REPLY" != "${REPLY#\#}" ] && continue
-
-        # FIX: suppress immediate glob expansion
-        for path in $REPLY; do
-          path="${path#/}"
-          path="${path#./}"
-          path="${path%/}"
-          exclList="$exclList**/$path,"
-        done
-      done < "$ignorefile"
-    fi
-
-    exclList="$exclList}"
-  fi
-}
-
-makeExpList() {
-  for exp in "$@"; do
-    [ "$expList" = "${expList%"$exp"*}" ] && expList="$expList$exp / "
   done
 }
 
-makeFiles() {
-  local match= code= fdCmd="fd $exclList -tf -H$symlinks $ignore -d$depth -p"
-  [ -z "$expList" ] && expList="$exp"
-  while [ -n "$expList" ]; do
-    count=`$fdCmd --max-results 2 -- "${expList%% / *}" "$dir" | wc -l`
+# ------------------------------------------------------------------------------
 
-    # emulate fzf's '-1' behaviour for all finders
-    if [ $count -eq 1 ]; then
-      match=`$fdCmd -- "${expList%% / *}" "$dir"`
-    elif [ $count -gt 1 ]; then
-      match=`$fdCmd -- "${expList%% / *}" "$dir" | $fuzzy $fuzzyOpts`
-      code=$?
-      if [ $code -ne 0 ]; then
-        [ $fuzzy = fzf -a $code -eq 130 ] && sigInt=1 sighandler
-        [ $code -eq 1 ] && sigInt=1 sighandler
-        fuzzyErr=1 sighandler
-      fi
-    fi
+function consume_argv() {
+  typeset -n out=$1 argv=$2
 
-    [ -n "$match" ]\
-      && files="$files$match "\
-      || fnfWarn=1 sighandler ${expList%% / *}
-
-    [ "$expList" = "$exp" ] && break
-
-    expList="${expList#* / }"
-  done
-
-  files="${files% }"
-}
-
-processArgs() {
-  [ "$1" != "${1%/}" -a ! -d "$1" ] && dirErr=1 sighandler "$1"
-
-  if [ -d "$1" ]; then
-    dir="$1"
-    shift
+  [[ ${argv[0]} =~ /$ && ! -d ${argv[0]} ]] \
+    && err 1 "not a directory: ${argv[0]}"
+  if [[ -d ${argv[0]} ]]; then
+    CFG+=([cwd]="${argv[0]}")
+    _shift ${!argv}
   fi
 
-  makeExpList $@
+  out=("${argv[@]}")
+  _shift ${!argv} ${#argv[@]}
 }
 
+function parse_cmdline() {
+  typeset -a ARGV=("$@")
 
-# argument parsing ---------------------
-depth=10
-dir="$PWD"
-exclPattern=
-exp='. / '
-expList=
-gitignore='**/.git*,'
-ignorefile="${0%/*}/exclude.nff"
-ignore=
-symlinks=
+  index ARGV --
+  typeset -i idx=$?
+  if (( $idx != 255 )); then
+    _argv_split=1
+    PATTERNS=("${ARGV[@]:$idx+1}")
+    ARGV=("${ARGV[@]:0:$idx}")
+  fi
 
-editor=
-fuzzy=
-fuzzyOpts=
+  while (( ${#ARGV[@]} > 0 )); do
+    case ${ARGV[0]} in
+      -h|--help)
+        print_help
+        exit 0
+        ;;
 
-while [ -n "$1" ]; do
-  case "$1" in
-    --)
-      shift
-      processArgs $@
-      break
-      ;;
+      -s|--silent)
+        NFF_META[VERBOSE]=0
+        _shift ARGV
+        ;;
 
-    -h|--help)
-      usage;;
+      -V|--version)
+        print_version
+        exit 0
+        ;;
 
-    -d|--depth)
-      verifyArg $1 $2
-      if [ $2 -eq $2 ] 2>/dev/null && [ $2 -gt 0 ]; then
-        depth=$2
-      else
-        depthErr=1 sighandler
-      fi
-      shift 2
-      ;;
+      # ----------------------------------------------------
 
-    -E|--editor)
-      if command -v $EDITOR 1>/dev/null; then
-        editor="$EDITOR"
-      else
-        editorWarn=1 sighandler $EDITOR
-      fi
-      shift
-      ;;
+      -d|--depth)
+        [[ ${ARGV[1]} =~ ^[[:digit:]]+$ ]] \
+          || err 1 "invalid depth: ${ARGV[1]:--}"
+        CFG+=([maxdepth]=$2)
+        _shift ARGV 2
+        ;;
 
-    -i|--ignore)
-      verifyArg $1 $2
-      if [ "$2" = - ]; then
-        unset ignorefile
-        ignore='--no-ignore'
-      else
-        [ ! -f "$2" -o ! -r "$2" ] && ignoreErr=1 sighandler "$2"
-        ignorefile="$2"
-      fi
-      shift 2
-      ;;
+      -e|--exclude)
+        EXCLUDES+=("-E '${ARGV[1]}'")
+        _shift ARGV 2
+        ;;
 
-    -f|--zf)
-      fuzzy=zf
-      shift
-      ;;
+      -E|--editor)
+        [[ -z $EDITOR ]] && err 1 'EDITOR not set'
+        NFF_EDITOR="$EDITOR"
+        _shift ARGV
+        ;;
 
-    -g|--no-git-ignore)
-      unset gitignore
-      shift
-      ;;
+      -f|--zf)
+        NFF_FUZZY=zf
+        _shift ARGV
+        ;;
 
-    -l)
-      symlinks=L
-      shift
-      ;;
+      -I|--no-ignore)
+        CFG+=([ignore]=0)
+        _shift ARGV
+        ;;
 
-    -o|--fuzzy-opts)
-      verifyArg $1 $2
-      fuzzyOpts="$2"
-      shift 2
-      ;;
+      -H|--show-hidden)
+        CFG+=([hidden]=1)
+        _shift ARGV
+        ;;
 
-    -p|--pattern)
-      verifyArg $1 $2
-      pattern=${2%/}
-      exclPattern="$exclPattern**/${pattern#*/},"
-      unset pattern
-      shift 2
-      ;;
+      -L|--no-symlinks)
+        CFG+=([symlink]=0)
+        _shift ARGV
+        ;;
 
-    -v|--version)
-      version;;
+      -o|--fuzzy-opts)
+        NFF_FUZZY_OPTS="${ARGV[1]}"
+        _shift ARGV 2
+        ;;
 
-    -y|--fzy)
-      fuzzy=fzy
-      shift
-      ;;
+      -y|--fzy)
+        NFF_FUZZY=fzy
+        _shift ARGV
+        ;;
 
-    -z|--fzf)
-      fuzzy=fzf
-      shift
-      ;;
+      -z|--fzf)
+        NFF_FUZZY=fzf
+        _shift ARGV
+        ;;
 
-    -*)
-      argErr=1 sighandler "$1";;
+      --[^-]*|-[^-]*)
+        err 1 "illegal argument: ${ARGV[0]}"
+        ;;
 
-    *)
-      for exp in "$@"; do
-        # explicit split, argument invalid
-        [ $exp = '--' ] && argErr=1 sighandler "$1"
-      done
+      *)
+        (( _argv_split == 1 )) && err 1 "illegal argument: ${ARGV[0]}"
+        consume_argv PATTERNS ARGV
+        ;;
+    esac
+  done
+}
 
-      processArgs $@
-      break
-      ;;
+function parse_file() {
+  typeset -n lines=$1 
+  typeset file="$2" fmt="${3:-%s}"
+
+  while read; do
+    [[ -z $REPLY || $REPLY =~ ^[[:blank:]]*# ]] && continue
+    lines+=("`printf -- "$fmt" "$REPLY"`")
+  done < "$file"
+}
+
+function try_default_editor() {
+  typeset -n editor=$1
+  dep_any editor nvim vim vi
+  log info "using default editor: $editor"
+}
+
+function try_default_fuzzy() {
+  typeset -n fuzzy=$1
+  dep_any fuzzy fzf fzy zf
+  log info "using default fuzzy finder: $fuzzy"
+}
+
+function try_default_fuzzy_opts() {
+  typeset -n opts=$1
+  typeset fuzzy=$2
+
+  case $fuzzy in
+    fzf) opts='-i -e --tiebreak=begin --reverse --prompt= --height=10 --no-color --no-info' ;;
+    fzy) opts='--lines=10 --prompt=' ;;
+    zf)  opts='--lines 10' ;;
   esac
+}
+
+function find_matches() {
+  typeset -n out=$1
+  typeset -a matches=()
+
+  # subshell with direct assignment breaks space-separated filenames
+  while read; do
+    matches+=("$REPLY")
+  done < <(eval ${CFG[fdcmd]} -- "$2" "${CFG[cwd]}")
+
+  # emulates fzf's `-1` behaviour for all finders
+  if (( ${#matches[@]} == 0 )); then
+    log warn "no match found: $2"
+  elif (( ${#matches[@]} == 1 )); then
+    out+=("${matches[0]}")
+  else
+    choice=`printf '%s\n' "${matches[@]}" | "$NFF_FUZZY" $NFF_FUZZY_OPTS`
+    retval=$?
+
+    if (( $retval > 0 )); then
+      ( [[ $NFF_FUZZY == fzf ]] && (( $retval == 130 )) ) \
+        || (( $retval == 1 )) && err 130 'interrupt'
+      err 7 "fuzzy finder returned non-zero exit code: $retval"
+    fi
+
+    contains out "$choice" || out+=("$choice")
+  fi
+}
+
+# ------------------------------------------------------------------------------
+
+typeset NFF_EDITOR NFF_FUZZY NFF_FUZZY_OPTS
+typeset -a EXCLUDES=() PATTERNS=() FILES=()
+typeset -i _argv_split=0
+typeset -A CFG=(
+  [cwd]="$PWD"
+  [ignore]=1
+  [hidden]=0
+  [symlink]=1
+  [maxdepth]=10
+)
+
+# FIX: argument parsing may fail before errors from missing dependencies
+parse_cmdline "$@"
+
+dep_all fd
+
+[[ -z $NFF_EDITOR ]]     && try_default_editor NFF_EDITOR
+[[ -z $NFF_FUZZY ]]      && try_default_fuzzy NFF_FUZZY
+[[ -z $NFF_FUZZY_OPTS ]] && try_default_fuzzy_opts NFF_FUZZY_OPTS $NFF_FUZZY
+
+ensure_version fd "$NFF_FUZZY"
+
+# ------------------------------------------------------------------------------
+
+[[ -f ${0%/*}/exclude.nff ]] \
+  && parse_file EXCLUDES "${0%/*}/exclude.nff" "-E '%s'"
+
+printf -v CFG[fdcmd] 'fd -tf -d%d -p %s %s %s %s' \
+  ${CFG[maxdepth]} \
+  `(( ${CFG[hidden]} == 1 ))  && printf -- '-H'` \
+  `(( ${CFG[symlink]} == 1 )) && printf -- '-L'` \
+  `(( ${CFG[ignore]} == 0 ))  && printf -- '-I'` \
+  "`IFS=' ' printf '%s' "${EXCLUDES[*]}"`"
+
+(( ${#PATTERNS[@]} == 0 )) && PATTERNS=(.)
+filter_uniq PATTERNS
+
+for p in "${PATTERNS[@]}"; do
+  find_matches FILES "$p"
 done
+filter_uniq FILES
 
-
-### dependency checks ------------------
-missingCount=0
-missingDeps=
-depAll wc fd
-
-[ -z $editor ] && getEditor
-[ -z $fuzzy ] && getFuzzy
-
-[ $missingCount -gt 0 ] && depErr=1 sighandler "${missingDeps#, }"
-unset dep missingDeps missingCount
-
-
-### verion checks ----------------------
-fdVer
-
-case $fuzzy in
-  fzf)
-    fzfVer
-    fuzzyOpts="${fuzzyOpts:--i -e --tiebreak=begin --reverse --prompt= --height=10 --no-color --no-info}"
-    ;;
-  fzy)
-    fzyVer
-    fuzzyOpts="${fuzzyOpts:---lines=10 --prompt=}"
-    ;;
-  zf)
-    zfVer
-    fuzzyOpts="${fuzzyOpts:---lines 10}"
-    ;;
-esac
-
-
-### execution --------------------------
-makeExclList
-
-files=
-makeFiles
-
-# open
-[ -n "$files" ] && $editor $files || noFileErr=1 sighandler
+if (( ${#FILES[@]} > 0 )); then
+  $NFF_EDITOR "${FILES[@]// /\ }"
+else
+   log info 'nothing to edit'
+   exit 4
+fi
