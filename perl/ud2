@@ -2,185 +2,199 @@
 use warnings;
 use strict;
 
-use Term::ANSIColor 'colored';
+use Term::ANSIColor qw(colored);
+use List::MoreUtils qw(firstidx);
 use feature 'signatures';
 $\ = "\n";
 
 use constant CLR => { info => 'cyan', warn => 'yellow', error => 'red' };
 
-# FIX: handle unmounting when other mountpoints exist?
-# FIX: nvme support
+# TODO: nvme support
 
 sub err ( $code, $str, $suppl ) {
-  printf( "ud2: %s%s\n", $str, $suppl ? ": $suppl" : '' );
-  exit($code) if $code > 0;
+    printf( "ud2: %s%s\n", $str, $suppl ? ": $suppl" : '' );
+    exit($code) if $code > 0;
 }
 
 sub log ( $color, $str ) {
-  printf( "%s %s\n", colored( '::', 'bold', CLR->{$color} ), $str );
+    printf( "%s %s\n", colored( '::', 'bold', CLR->{$color} ), $str );
 }
 
 sub path_contains ($binary) {
-  for ( split( ':', $ENV{PATH} // '' ) ) {
-    chop     if m{/$};
-    return 1 if -x "$_/$binary";
-  }
+    for ( split( ':', $ENV{PATH} // '' ) ) {
+        chop     if m{/$};
+        return 1 if -x "$_/$binary";
+    }
 
-  return 0;
+    return 0;
 }
 
 sub dep (@deps) {
-  if ( my @missing = grep( !path_contains($_), @deps ) ) {
-    @missing = map( colored( $_, 'bold' ), @missing );
-    err( 4, 'dependency not met', join( ', ', @missing ) );
-  }
+    if ( my @missing = grep( !path_contains($_), @deps ) ) {
+        @missing = map( colored( $_, 'bold' ), @missing );
+        err( 4, 'dependency not met', join( ', ', @missing ) );
+    }
 }
 
 # ------------------------------------------------------------------------------
 
-sub get_default_dev() {
-  my $dname = '/dev/disk/by-id';
+sub get_newest_dev() {
+    my $dname = '/dev/disk/by-id';
 
-  opendir( DH, $dname )
-    || err( 2, 'failed to open dirhandle', colored( $dname, 'bold' ) );
-  my @ids = grep( !/^(\.|dm-)/ && !/-part\d+$/, readdir(DH) );
-  closedir(DH)
-    || err( 2, 'failed to close dirhandle', colored( $dname, 'bold' ) );
-  err( 2, 'failed to retrieve default device' ) if !@ids;
+    opendir( DH, $dname )
+      || err( 2, 'failed to open dirhandle', colored( $dname, 'bold' ) );
+    my @ids = grep( !( /^(\.|dm-)/ || /-part\d+$/ ), readdir(DH) );
+    closedir(DH)
+      || err( 2, 'failed to close dirhandle', colored( $dname, 'bold' ) );
+    err( 2, 'failed to retrieve default device' ) if !@ids;
 
-  my ( $mtime, $dev ) = ( 0, '' );
-
-  foreach (@ids) {
-    if ( $mtime < ( stat("$dname/$_") )[9] ) {
-      $mtime = ( stat(_) )[9];
-      $dev   = ( split( '/', readlink("$dname/$_") ) )[-1];
+    my ( $mtime, $dev ) = ( 0, '' );
+    foreach (@ids) {
+        if ( $mtime < ( stat("$dname/$_") )[9] ) {
+            $mtime = ( stat(_) )[9];
+            $dev   = ( split( '/', readlink("$dname/$_") ) )[-1];
+        }
     }
-  }
 
-  return $dev;
+    return $dev;
+}
+
+sub get_dev_info ($name) {
+    chomp( my @out = `udisksctl info -b /dev/$name 2>&1` );
+    err( 1, 'info fatal', colored( "@out", CLR->{error} ) ) if $? > 0;
+
+    chomp(
+        my @part = @out[
+          firstidx( sub { /\bPartitions:/ }, @out )
+          .. firstidx( sub { /\bType:/ }, @out ) - 1
+        ]
+    );
+
+    return {
+        dev       => $name,
+        is_crypto => scalar( grep( /\bIdUsage:\s+crypto$/,    @out ) ) > 0,
+        has_fs    => scalar( grep( /\bIdUsage:\s+filesystem/, @out ) ) > 0,
+        part      => [ sort( map( s{^.+(\d)$}{$1}r, @part ) ) ],
+    };
 }
 
 sub get_dm_map ($dev) {
-  $dev =~ s/(\d+)$//;
+    $dev =~ s/(\d+)$//;
+    my $dname = sprintf( "/sys/block/$dev/%sholders", $1 ? "$dev$1/" : '' );
 
-  my $dname = "/sys/block/$dev";
-  $dname .= "/$dev$1" if $1;
-  $dname .= '/holders';
+    opendir( DH, $dname )
+      || err( 2, 'failed to open dirhandle', colored( $dname, 'bold' ) );
+    my @map = grep( !/^\./, readdir(DH) );
+    closedir(DH)
+      || err( 2, 'failed to close dirhandle', colored( $dname, 'bold' ) );
 
-  opendir( DH, $dname )
-    || err( 2, 'failed to open dirhandle', colored( $dname, 'bold' ) );
-  my @map = grep( !/^\./, readdir(DH) );
-  closedir(DH)
-    || err( 2, 'failed to close dirhandle', colored( $dname, 'bold' ) );
-
-  return $map[0];
+    return $map[0];
 }
 
 sub get_dm_mapped_name ($dev) {
-  my $fname = "/sys/block/$dev/dm/name";
+    my $fname = "/sys/block/$dev/dm/name";
+    return $dev if !-e $fname;
 
-  return $dev if !-e $fname;
+    open( FH, '<', $fname )
+      || err( 2, 'failed to open filehandle', colored( $fname, 'bold' ) );
+    chomp( my $name = "mapper/${\<FH>}" );
+    close(FH)
+      || err( 2, 'failed to close filehandle', colored( $fname, 'bold' ) );
 
-  open( FH, '<', $fname )
-    || err( 2, 'failed to open filehandle', colored( $fname, 'bold' ) );
-
-  my $name = "mapper/${\<FH>}";
-  chomp($name);
-
-  close(FH)
-    || err( 2, 'failed to close filehandle', colored( $fname, 'bold' ) );
-
-  return $name;
-}
-
-sub is_crypto ($dev) {
-  return grep( /IdUsage:\s+crypto$/, `udisksctl info -b /dev/$dev` );
+    return $name;
 }
 
 sub is_locked ($crypt) {
-  return length( get_dm_map($crypt) // '' ) == 0;
+    return length( get_dm_map($crypt) // '' ) == 0;
 }
 
 sub is_mounted ($dev) {
-  my $name = get_dm_mapped_name($dev);
+    my $name = get_dm_mapped_name($dev);
 
-  open( FH, '<', '/proc/mounts' )
-    || err( 2, 'failed to open filehandle', colored( '/proc/mounts', 'bold' ) );
-  my $mnt = ( grep( m{^/dev/$name\s}, <FH> ) )[0];
-  close(FH)
-    || err( 2, 'failed to close filehandle',
-    colored( '/proc/mounts', 'bold' ) );
+    open( FH, '<', '/proc/mounts' )
+      || err( 2, 'failed to open filehandle',
+        colored( '/proc/mounts', 'bold' ) );
+    my $mnt = scalar( grep( m{^/dev/$name\s}, <FH> ) );
+    close(FH)
+      || err( 2, 'failed to close filehandle',
+        colored( '/proc/mounts', 'bold' ) );
 
-  return !!$mnt;
+    return $mnt > 0;
 }
 
 sub try_unlock ($crypt) {
-  &log( 'warn', "unlocking ${\colored($crypt, 'bold')}" );
+    &log( 'warn', "unlocking ${\colored($crypt, 'bold')}" );
 
-  $_ = `udisksctl unlock -b /dev/$crypt 2>&1`;
-  chomp;
-  s/GDBus\.Error:.+?:\s//;
-  err( 1, 'unlock fatal', colored( $_, CLR->{error} ) ) if $? > 0;
+    chomp( $_ = `udisksctl unlock -b /dev/$crypt 2>&1` );
+    s/^.+?: GDBus\.Error:.+?: //;
+    err( 1, 'unlock fatal', colored( $_, CLR->{error} ) ) if $? > 0;
 
-  &log( 'warn',
+    &log( 'warn',
 "mapped ${\colored($crypt, 'bold')} as ${\colored(get_dm_map($crypt), 'bold')}"
-  );
+    );
 }
 
 sub try_mount ($dev) {
-  err( 1, 'not mountable', colored( $dev, 'bold' ) )
-    if !grep( /IdUsage:\s+filesystem/, `udisksctl info -b /dev/$dev` );
+    &log( 'info', "mounting ${\colored( $dev, 'bold' )}" );
 
-  &log( 'info', "mounting ${\colored( $dev, 'bold' )}" );
+    chomp( $_ = `udisksctl mount -b /dev/$dev --no-user-interaction 2>&1` );
+    s/^.+?: GDBus\.Error:.+?: //;
+    err( 1, 'mount fatal', colored( $_, CLR->{error} ) ) if $? > 0;
 
-  $_ = `udisksctl mount -b /dev/$dev --no-user-interaction 2>&1`;
-  chomp;
-  s/GDBus\.Error:.+?:\s//;
-  err( 1, 'mount fatal', colored( $_, CLR->{error} ) ) if $? > 0;
-
-  m{Mounted /dev/$dev at (.+)$};
-  &log( 'info',
-    "${\colored($dev, 'bold')} mounted at ${\colored($1, 'bold')}" );
+    m{Mounted /dev/$dev at (.+)$};
+    &log( 'info',
+        "${\colored($dev, 'bold')} mounted at ${\colored($1, 'bold')}" );
 }
 
 sub try_unmount ($dev) {
-  &log( 'info', "unmounting ${\colored($dev, 'bold')}" );
+    &log( 'info', "unmounting ${\colored($dev, 'bold')}" );
 
-  $_ = `udisksctl unmount -b /dev/$dev --no-user-interaction 2>&1`;
-  chomp;
-  s/GDBus\.Error:.+?:\s//;
-  err( 1, 'unmount fatal', colored( $_, CLR->{error} ) ) if $? > 0;
+    chomp( $_ = `udisksctl unmount -b /dev/$dev --no-user-interaction 2>&1` );
+    s/^.+?: GDBus\.Error:.+?: //;
+    err( 1, 'unmount fatal', colored( $_, CLR->{error} ) ) if $? > 0;
 }
 
 # ------------------------------------------------------------------------------
 
 dep('udisksctl');
-
 err( 1, 'too many arguments' ) if scalar(@ARGV) > 1;
 
-my $target;
-if (@ARGV) {
-  $target = shift =~ s{^/dev/}{}r;
-}
-else {
-  $target = get_default_dev();
-  $target .= '1' if !is_crypto($target);
+my $d      = get_dev_info( @ARGV ? shift =~ s{^/dev/}{}r : get_newest_dev() );
+my $target = $d->{dev};
+
+err( 1, 'not found', colored( $d->{dev}, 'bold' ) )
+  if !-e "/dev/$d->{dev}";
+err( 1, 'not a block device', colored( $d->{dev}, 'bold' ) )
+  if !-b "/dev/$d->{dev}";
+
+if ( !( $d->{has_fs} || $d->{is_crypto} ) ) {
+    err( 1, 'not mountable', colored( $d->{dev}, 'bold' ) )
+      if !scalar( @{ $d->{part} } );
+
+    # use partition with the lowest number
+    $d = get_dev_info( $d->{dev} . $d->{part}->[0] );
+
+    &log( 'warn',
+"${\colored($target, 'bold')} does not contain a filesystem, using ${\colored($d->{dev}, 'bold')} instead"
+    );
 }
 
-err( 1, 'not found', colored( $target, 'bold' ) ) if !-e "/dev/$target";
-err( 1, 'not a block device', colored( $target, 'bold' ) )
-  if !-b "/dev/$target";
-
-if ( !is_crypto($target) ) {
-  is_mounted($target) ? try_unmount($target) : try_mount($target);
-  exit(0);
+if ( !$d->{is_crypto} ) {
+    is_mounted( $d->{dev} )
+      ? try_unmount( $d->{dev} )
+      : try_mount( $d->{dev} );
+    exit(0);
 }
 
 my $mapped = 0;
-is_locked($target) ? try_unlock($target) : ( $mapped = 1 );
+is_locked( $d->{dev} ) ? try_unlock( $d->{dev} ) : ( $mapped = 1 );
 
-my $dev = get_dm_map($target);
+$d = get_dev_info( get_dm_map( $d->{dev} ) );
+
 &log( 'warn',
-  "${\colored($target, 'bold')} is mapped as ${\colored($dev, 'bold')}" )
+    "${\colored($target, 'bold')} is mapped as ${\colored($d->{dev}, 'bold')}" )
   if $mapped;
-is_mounted($dev) ? try_unmount($dev) : try_mount($dev);
+
+is_mounted( $d->{dev} )
+  ? try_unmount( $d->{dev} )
+  : try_mount( $d->{dev} );
