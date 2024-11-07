@@ -2,7 +2,7 @@
 
 typeset -A NFF_META=(
   [PROGRAM]="${0##*/}"
-  [VERSION]='2.0'
+  [VERSION]='2.1'
   [VERBOSE]=1
 )
 typeset -A _clr=(
@@ -53,8 +53,8 @@ function print_help() {
 	    -I, --no-ignore
 	        Include usually ignored files in search results. See fd(1).
 
-	    -H, --show-hidden
-	        Include hidden files in search results.
+	    -H, --exclude-hidden
+	        Exclude hidden files from search results.
 
 	    -L, --no-symlinks
 	        Exclude symlinks from search results.
@@ -353,8 +353,8 @@ function parse_cmdline() {
         _shift ARGV
         ;;
 
-      -H|--show-hidden)
-        CFG+=([hidden]=1)
+      -H|--exclude-hidden)
+        CFG+=([hidden]=0)
         _shift ARGV
         ;;
 
@@ -459,7 +459,7 @@ typeset -i _argv_split=0
 typeset -A CFG=(
   [cwd]="$PWD"
   [ignore]=1
-  [hidden]=0
+  [hidden]=1
   [symlink]=1
   [maxdepth]=10
 )
