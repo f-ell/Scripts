@@ -1,35 +1,55 @@
 package Proxmap;
 
+use warnings;
+use strict;
+
 use Exporter qw(import);
-our @EXPORT = qw(sort);
+our @EXPORT = qw(psort);
 
-use feature qw(signatures postderef);
+use feature    qw(signatures);
+use List::Util qw(first);
 
-# Perform proxmap sort and return a sorted version of $array (not in place).
-our sub sort ( $array, $mapKey ) {
-  my @mapped = map( { $mapKey->() } $array->@* )
-    ;    # compute mapped values aot - mapKey may be expensive
+=item psort $list, $mapKey
+Z<>
 
-  my @proxMap = (0) x scalar( $array->@* );
-  my @sorted  = (-1) x scalar( $array->@* );
+Returns a reference to a sorted version of C<$list>. C<$mapKey> is used to
+compute the bucket each key maps to (locally setting C<$_>).
 
-  # use proxMap for hit counting to reduce storage requirements
-  $proxMap[ $mapped[$_] ]++ foreach 0 .. $array->$#*;
-  $proxMap[ $_ - 1 ] = $proxMap[$_] - $proxMap[ $_ - 1 ]
-    foreach reverse( 1 .. $#proxMap );
+The the sort is B<not> performed in place.
 
-  for my $i ( 0 .. $array->$#* ) {
-    my $last  = $proxMap[ $mapped[$i] + 1 ] - 1;
-    my $index = (
-      grep( { $sorted[$_] == -1 || $sorted[$_] > $array->[$i] }
-        $proxMap[ $mapped[$i] ] .. $last ) )[0]
-      ;    # doesn't short circuit, but runs in constant time due bucketing
+=cut
 
-    @sorted[ $index, $index + 1 .. $last ] =
-      ( $array->[$i], @sorted[ $index .. $last ] );
+our sub psort ( $list, $mapKey ) {
+  my @bucket  = (0) x scalar( $list->@* );
+  my @proxmap = (0) x scalar( $list->@* );       # also used for hit counting
+  my @out     = (undef) x scalar( $list->@* );
+
+  for my $i ( 0 .. $list->$#* ) {
+    local $_ = $list->[$i];
+    $bucket[$i] = $mapKey->();
+    $proxmap[ $bucket[$i] ]++;
   }
 
-  return \@sorted;
+  my $sum = 0;
+  for ( 0 .. $#proxmap ) {
+    if ( $proxmap[$_] == 0 ) {
+      $proxmap[$_] = undef;
+      next;
+    }
+
+    ( $proxmap[$_], $sum ) = ( $sum, $sum + $proxmap[$_] );
+  }
+
+  for my $i ( 0 .. $list->$#* ) {
+    my $end =
+      first( sub { !defined( $out[$_] ) }, $proxmap[ $bucket[$i] ] .. $#out );
+    my $j = first( sub { !defined( $out[$_] ) || $out[$_] > $list->[$i] },
+      $proxmap[ $bucket[$i] ] .. $end );
+
+    @out[ $j, $j + 1 .. $end ] = ( $list->[$i], @out[ $j .. $end ] );
+  }
+
+  return \@out;
 }
 
 1;
