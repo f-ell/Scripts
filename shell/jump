@@ -4,21 +4,24 @@ trap 'err 130 interrupt' HUP INT QUIT TERM
 
 typeset -g PROGRAM='j'
 typeset -g AUTHOR='Nico Pareigis'
-typeset -g VERSION='0.1.1'
+typeset -g VERSION='0.2.0'
 
 typeset -A CFG=(
-  [cache]="${XDG_CACHE_HOME:-~/.cache}"
-  [src]='j_src'
-  [dst]='j_dst'
+  [c_dir]="${XDG_CACHE_HOME:-~/.cache}/jump"
   [ifs]="$IFS"
 
   [inv]="$PWD"
   [cwd]="$PWD"
+  [cache]=1
   [depth]=8
   [fuzzy]="${J_FUZZY:-fzf}"
   [hidden]=
   [links]=
 )
+
+CFG[c_src]="${CFG[c_dir]}/src"
+CFG[c_dst]="${CFG[c_dir]}/dst"
+CFG[c_jmp]="${CFG[c_dir]}/jmp"
 
 # ---------------------------------------------------------------------- utility
 
@@ -68,6 +71,9 @@ function usage {
 	OPTIONS
 	    -a | --all
 	        Include hidden directories in search results.
+
+	    -c | --no-cache
+	        Ignore jump cache when resolving jump targets.
 
 	    -d | --depth <int>
 	        Set \`fd\` search depth to <int>, default is 8.
@@ -163,6 +169,11 @@ function parse_cmdline {
         shift
         ;;
 
+      -c|--no-cache)
+        CFG[cache]=0
+        shift
+        ;;
+
       -d|--depth)
         typeset arg=$1
         shift
@@ -188,14 +199,10 @@ function parse_cmdline {
         ;;
 
       -s|--source)
-        rejump ${CFG[src]}
-        break
-        ;;
+        rejump ${CFG[c_src]};;
 
       -t|--target)
-        rejump ${CFG[dst]}
-        break
-        ;;
+        rejump ${CFG[c_dst]};;
 
       -v|--version)
         version;;
@@ -240,29 +247,52 @@ function fd_exclude {
   done
 }
 
+function try_cache {
+  typeset query=$1
+  typeset -n n_out=$2
+
+  local IFS=$'\n'
+  while read; do
+    [[ $REPLY =~ ^"$query | "(.+) ]] || continue
+
+    n_out="${BASH_REMATCH[1]}"
+    break
+  done <"${CFG[c_jmp]}"
+}
+
+function write_cache {
+  typeset query="$1" target="$2"
+  printf "%s | %s\n" "$query" "$target" >>"${CFG[c_jmp]}" \
+    || err 0 'failed to update jump cache'
+}
+
+function write_src_cache {
+  typeset dst="$1"
+
+  printf "${CFG[inv]}\n" 1>"${CFG[c_src]}" \
+    || err 0 'failed to update source cache'
+  printf "%s\n" `realpath ${dst#/${CFG[cwd]}}` 1>"${CFG[c_dst]}" \
+    || err 0 'failed to update destination cache'
+}
+
 function jump {
-  typeset -i cache=$1
+  typeset -i update_src_cache=$1
   typeset target=$2
 
-  if (( $cache == 1 )); then
-    printf "${CFG[inv]}\n" 1>"${CFG[cache]}/${CFG[src]}" \
-      || err 0 'failed to cache source'
-    printf "%s\n" `realpath ${target#/${CFG[cwd]}}` 1>"${CFG[cache]}/${CFG[dst]}" \
-      || err 0 'failed to cache destination'
-
+  if (( $update_src_cache == 1 )); then
+    write_src_cache "$target"
     printf "cd '%s/%s'\n" "${CFG[cwd]%/}" "${target#${CFG[cwd]}}"
-    exit 0
+  else
+    printf "cd '%s'\n" "$target"
   fi
-
-  printf "cd '%s'\n" "$target"
-  exit 0
 }
 
 function rejump {
-  [[ ! -f ${CFG[cache]}/$1 ]] && err 1 'jump cache miss'
-  [[ ! -r ${CFG[cache]}/$1 ]] && err 4 'failed to read jump cache'
+  [[ ! -f $1 ]] && err 1 'jump cache miss'
+  [[ ! -r $1 ]] && err 4 'failed to read jump cache'
 
-  jump 0 `< "${CFG[cache]}/$1"`
+  jump 0 `< "$1"`
+  exit 0
 }
 
 # -------------------------------------------------------------------- execution
@@ -272,9 +302,12 @@ typeset -a exclude=()
 typeset -a candidates=()
 typeset target=
 
-[[ -d ${CFG[cache]} ]] \
-  || mkdir "${CFG[cache]}" \
+[[ -d ${CFG[c_dir]} ]] \
+  || mkdir -p "${CFG[c_dir]}" \
   || err 4 'could not create cache directory'
+[[ -f ${CFG[c_jmp]} ]] \
+  || printf '' >"${CFG[c_jmp]}" \
+  || err 4 'could not create jumplist in cache directory' 
 
 parse_cmdline patterns "$@"
 dep 'fd' 'mkdir' 'realpath' ${CFG[fuzzy]%% *}
@@ -287,6 +320,17 @@ fd_exclude exclude
 
 cd "${CFG[cwd]}"
 
+if (( ${CFG[cache]} == 1 )); then
+  IFS=':'
+  try_cache "${patterns[*]}" target
+  IFS="${CFG[ifs]}"
+
+  if [[ -n $target ]]; then
+    jump 1 "$target"
+    exit 0
+  fi
+fi
+
 mapfile -d$'\n' < <(
   IFS='|' fd \
   -d${CFG[depth]} \
@@ -297,14 +341,20 @@ mapfile -d$'\n' < <(
   -- "${patterns[*]}"
 )
 
-(( ${#MAPFILE[@]} == 0 )) && err 2 'no matches found'
-
-if (( ${#MAPFILE[@]} == 1 )); then
+if (( ${#MAPFILE[@]} == 0 )); then
+  err 2 'no matches found'
+elif (( ${#MAPFILE[@]} == 1 )); then
   target="${MAPFILE[0]%$'\n'}"
 else
   target="`printf "%s\n" ${MAPFILE[@]} | ${CFG[fuzzy]}`"
   target="${target%$'\n'}"
   [[ -z $target ]] && err 130 'interrupt'
+fi
+
+if (( ${CFG[cache]} == 1 )); then
+  IFS=':'
+  write_cache "${patterns[*]}" "$target"
+  IFS="${CFG[ifs]}"
 fi
 
 jump 1 "$target"
