@@ -230,6 +230,16 @@ function parse_cmdline {
   done
 }
 
+function fd_exclude {
+  typeset -n n_exclude=$1
+
+  local IFS=':'
+  for pattern in $J_IGNORE; do
+    [[ -z $pattern ]] && continue
+    n_exclude+=("$pattern")
+  done
+}
+
 function jump {
   typeset -i cache=$1
   typeset target=$2
@@ -258,6 +268,7 @@ function rejump {
 # -------------------------------------------------------------------- execution
 
 typeset -a patterns=()
+typeset -a exclude=()
 typeset -a candidates=()
 typeset target=
 
@@ -268,6 +279,12 @@ typeset target=
 parse_cmdline patterns "$@"
 dep 'fd' 'mkdir' 'realpath' ${CFG[fuzzy]%% *}
 
+if (( ${J_INVERT_ALL:-0} == 1 )); then
+  [[ -z ${CFG[hidden]} ]] && CFG[hidden]='-H' || CFG[hidden]=
+fi
+
+fd_exclude exclude
+
 cd "${CFG[cwd]}"
 
 mapfile -d$'\n' < <(
@@ -276,16 +293,17 @@ mapfile -d$'\n' < <(
   -td \
   ${CFG[hidden]} \
   ${CFG[links]} \
-  "${exclude[@]}" \
+  "${exclude[@]/#/-E}" \
   -- "${patterns[*]}"
 )
 
 (( ${#MAPFILE[@]} == 0 )) && err 2 'no matches found'
 
 if (( ${#MAPFILE[@]} == 1 )); then
-  target="${MAPFILE[0]}"
+  target="${MAPFILE[0]%$'\n'}"
 else
-  target=`printf "%s\n" ${MAPFILE[@]} | ${CFG[fuzzy]}`
+  target="`printf "%s\n" ${MAPFILE[@]} | ${CFG[fuzzy]}`"
+  target="${target%$'\n'}"
   [[ -z $target ]] && err 130 'interrupt'
 fi
 
