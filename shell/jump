@@ -1,32 +1,47 @@
 #!/usr/bin/bash
 
-program='j'
-author='Nico Pareigis'
-version='0.1.0'
+trap 'err 130 interrupt' HUP INT QUIT TERM
 
-TMPDIR="/tmp/$USER"
-TMPSRC="$TMPDIR/j_src"
-TMPDEST="$TMPDIR/j_dest"
-BASE="$PWD"
+typeset -g PROGRAM='j'
+typeset -g AUTHOR='Nico Pareigis'
+typeset -g VERSION='0.1.1'
+
+typeset -A CFG=(
+  [cache]="${XDG_CACHE_HOME:-~/.cache}"
+  [src]='j_src'
+  [dst]='j_dst'
+  [ifs]="$IFS"
+
+  [inv]="$PWD"
+  [cwd]="$PWD"
+  [depth]=8
+  [fuzzy]="${J_FUZZY:-fzf}"
+  [hidden]=
+  [links]=
+)
+
+# ---------------------------------------------------------------------- utility
 
 function err {
-  printf '%s: %s\n' "$program" "$2" 1>&2
+  printf '%s: %s\n' "$PROGRAM" "$2" 1>&2
   (( $1 > 0 )) && exit $1
 }
 
-function sighandler {
-  (( ${tmp_store:-0} == 1 )) && err 0 "warning - failed writing jump information to '$1'"
-  (( ${tmp_read:-0} == 1 ))  && err 2 'could not read jump information'
-  (( ${tmp_exist:-0} == 1 )) && err 2 'no jump information available'
-  (( ${dir:-0} == 1 ))       && err 2 "could not create directory '$1'"
-  (( ${dep:-0} == 1 ))       && err 7 "dependency not met - $1"
-  (( ${int:-0} == 1 ))       && err 130 'interrupt'
+function dep {
+  typeset -a unmet
 
-  (( ${arg:-0} == 1 ))    && err 1 "illegal option - $1"
-  (( ${base:-0} == 1 ))   && err 1 "invalid directory - $1"
-  (( ${optarg:-0} == 1 )) && err 1 "invalid argument for option '$1' - $2"
-  (( ${optmis:-0} == 1 )) && err 1 "missing argument for option '$1'"
-  (( ${result:-0} == 1 )) && err 2 'no matches found'
+  for dep in "$@"; do
+    if ! command -v $dep 1>/dev/null; then
+      unmet+=($dep)
+    fi
+  done
+
+  local IFS=','
+  ((${#unmet[@]} > 0)) && err 4 "dependency not met: ${unmet[*]}"
+}
+
+function valid {
+  [[ -n $1 && $1 != -- ]]
 }
 
 function usage {
@@ -34,24 +49,21 @@ function usage {
     printf "$REPLY\n"
   done <<-EOF
 	NAME
-	    $program - find and jump to child-directories
+	    $PROGRAM - find and jump to child-directories
 
 	SYNOPSIS
-	    $program [<options>] [<pattern>]
-	    $program [<options>] [<directory>] [<pattern>...]
+	    $PROGRAM [<options>] [<pattern>]
+	    $PROGRAM [<options>] [<directory>] [<pattern>...]
 
 	DESCRIPTION
-	    $program uses \`fd\` to find jump candidates.
+	    $PROGRAM uses \`fd\` to find jump candidates.
 	    <directory> specifies the directory in which to search for candidates.
 	    <pattern> may be any regex understood by \`fd\` (uses smart-case by
 	    default).
 
-	    If there is more than one jump candidate, the user may select the desired
-	    target using a fuzzy finder / external program of their choice (see
-	    OPTIONS and ENVIRONMENT VARIABLES below).
-
-	    Before jumping, $program stores jump information in "/tmp/\$USER", which can
-	    later be used to jump to the last invocation directory or jump target.
+	    In case there is more than on jump candidate, the target is determined
+	    using a fuzzy finder (see OPTIONS and ENVIRONMENT VARIABLES below). Jump
+	    information is cached to allow repeated jumping to specific targets.
 
 	OPTIONS
 	    -a | --all
@@ -63,35 +75,30 @@ function usage {
 
 	    -f | --zf
 	        Use \`zf\` for fuzzy-finding.
-	        Requires \`zf\` to be installed and available in PATH.
 
 	    -h | --help
-	        Print this help information and exit.
+	        Print help information and exit.
 
-	    -l | --follow-links
-	        Include symlinked directories in search results.
+	    -l | --links
+	        Include symlinks in search results.
 
 	    -s | --source
-	        Jump to the source directory of $program's last invocation (i.e. PWD
-	        $program was last called from). Reads jump information from
-	        "/tmp/\$USER/${TMPSRC##*/}".
+	        Jump to the source directory of the last invocation (i.e. PWD $PROGRAM
+	        as last called from).
 
 	    -t | --target
-	        Jump to the target directory of $program's last invocation. Reads jump
-	        information from "/tmp/\$USER/${TMPDEST##*/}".
+	        Jump to the target of the last invocation.
 
 	    -v | --version
 	        Print version information and exit.
 
 	    -y | --fzy
 	        Use \`fzy\` for fuzzy-finding.
-	        Requires \`fzy\` to be installed and available in PATH.
 
 	    -z | --fzf
 	        Use \`fzf\` for fuzzy-finding.
-	        Requires \`fzf\` to be installed and available in PATH.
 
-	        $program is not designed to handle \`fzf\`'s multi-selection feature.
+	        \`fzf\`'s multi-selection feature is not properly supported.
 	        Usage may result in unexpected behaviour.
 
 	ENVIRONMENT VARIABLES
@@ -104,8 +111,7 @@ function usage {
 	          b) specified as an absolute or relative path.
 
 	        It should read the jump candidates as a newline separated list from
-	        STDIN and return any single entry / line, which will be used as the
-	        jump target.
+	        STDIN and return a single line, which will be used as the jump target.
 
 	    J_IGNORE
 	        Can be a colon-separated list (similar to PATH) of glob-patterns to
@@ -119,7 +125,7 @@ function usage {
 	EXIT STATUS
 	      1, on argument error
 	      2, when no matches are found / missing jump information
-	      7, on dependency error
+	      4, on dependency or filesystem error
 	    130, on keyboard interrupt
 
 	DEPENDENCIES
@@ -128,181 +134,159 @@ function usage {
 
 	    Other:
 	        fd
-	        fzf | fzy | zf (optional, depending on arguments / J_FUZZY)
+	        fzf | fzy | zf (optional, depending on arguments / environment)
 
 	VERSION
-	    $version
+	    $VERSION
 
 	AUTHOR(S)
-	    $author
+	    $AUTHOR
 	EOF
   exit 0
 }
 
 function version {
-  printf "$program $version $author\n"
+  printf "$PROGRAM $VERSION $AUTHOR\n"
   exit 0
 }
 
-# ----------------------------------------------------------
+# ------------------------------------------------------------------------- func
 
-function arginvalid {
-  # FIX: ensure $1 isn't a valid option
-  [[ -z $1 || $1 == -- ]]
-}
+function parse_cmdline {
+  typeset -n n_patterns=$1
+  shift
 
-function dep {
-  declare -a missing
-
-  for dep in "$@"; do
-    if ! command -v $dep 1>/dev/null; then
-      missing+=($dep)
-    fi
-  done
-
-  declare deps="${missing[@]}"
-  ((${#missing[@]} > 0)) && dep=1 sighandler "${deps// /, }"
-}
-
-function make_exclude {
-  declare e
-  local IFS=':'
-  for e in $J_IGNORE; do
-    [[ -z $e ]] && continue
-    exclude+=(-E$e)
-  done
-}
-
-function proc {
   while [[ -n $@ ]]; do
     case "$1" in
       -a|--all)
-        opts[hidden]='-H'
+        CFG[hidden]='-H'
         shift
         ;;
 
       -d|--depth)
-        declare arg=$1
+        typeset arg=$1
         shift
 
-        arginvalid "$1" && optmis=1 sighandler $arg
-        [[ $1 =~ ^[[:digit:]]+$ ]] && (( $1 > 0 )) || optarg=1 sighandler $arg $1
+        valid "$1" || err 1 "illegal argument $arg: $1"
+        [[ $1 =~ ^[[:digit:]]+$ ]] && (( $1 > 0 )) || err 1 "$arg: expected positive integer, got $arg"
 
-        opts[depth]=$1
+        CFG[depth]=$1
         shift
         ;;
 
       -f|--zf)
-        opts[fuzzy]='zf'
+        CFG[fuzzy]='zf'
         shift
         ;;
 
       -h|--help)
         usage;;
 
-      -l|--follow-links)
-        opts[links]='-L'
+      -l|--links)
+        CFG[links]='-L'
         shift
         ;;
 
       -s|--source)
-        _jump "$TMPSRC"
-        shift
+        rejump ${CFG[src]}
+        break
         ;;
 
       -t|--target)
-        _jump "$TMPDEST"
-        shift
+        rejump ${CFG[dst]}
+        break
         ;;
 
       -v|--version)
         version;;
 
       -y|--fzy)
-        opts[fuzzy]='fzy'
+        CFG[fuzzy]='fzy'
         shift
         ;;
 
       -z|--fzf)
-        opts[fuzzy]='fzf'
+        CFG[fuzzy]='fzf'
         shift
         ;;
 
       -*)
-        [[ $1 != -- ]] && arg=1 sighandler $1;&
+        [[ $1 != -- ]] && err 1 "illegal argument: $1";&
 
       --|*)
         [[ $1 == -- ]] && shift
-        [[ $# -gt 1 && ! -d $1 ]] && base=1 sighandler "$1"
 
-        if [[ $# -gt 1 && -d $1 ]]; then
-          opts[base]=`realpath "$1"`
+        if (( $# > 1 )); then
+          [[ ! -d $1 ]] && err 1 "not a directory: $1"
+
+          CFG[cwd]=`realpath "$1"`
           shift
         fi
 
-        patterns+=($@)
+        patterns+=("$@")
         break
         ;;
     esac
   done
 }
 
-# ----------------------------------------------------------
-
 function jump {
-  if (( ${1:-0} == 1 )); then
-    [[ ! -d "$TMPDIR" ]] && { mkdir "$TMPDIR" || dir=1 sighandler "$TMPDIR"; }
+  typeset -i cache=$1
+  typeset target=$2
 
-    printf "$BASE\n" 1> "$TMPSRC"\
-      || tmp_store=1 sighandler "$TMPSRC"
-    printf "%s\n" `realpath ${2#/${opts[base]}}` 1> "$TMPDEST"\
-      || tmp_store=1 sighandler "$TMPDEST"
+  if (( $cache == 1 )); then
+    printf "${CFG[inv]}\n" 1>"${CFG[cache]}/${CFG[src]}" \
+      || err 0 'failed to cache source'
+    printf "%s\n" `realpath ${target#/${CFG[cwd]}}` 1>"${CFG[cache]}/${CFG[dst]}" \
+      || err 0 'failed to cache destination'
+
+    printf "cd '%s/%s'\n" "${CFG[cwd]%/}" "${target#${CFG[cwd]}}"
+    exit 0
   fi
 
-  printf "cd \"$2\"\n"
+  printf "cd '%s'\n" "$target"
   exit 0
 }
 
-function _jump {
-  [[ ! -f "$1" ]] && tmp_exist=1 sighandler "$1"
-  [[ ! -r "$1" ]] && tmp_read=1 sighandler "$1"
+function rejump {
+  [[ ! -f ${CFG[cache]}/$1 ]] && err 1 'jump cache miss'
+  [[ ! -r ${CFG[cache]}/$1 ]] && err 4 'failed to read jump cache'
 
-  jump 0 `< $1`
+  jump 0 `< "${CFG[cache]}/$1"`
 }
 
-# ----------------------------------------------------------
+# -------------------------------------------------------------------- execution
 
-declare -A opts=(
-  [base]="$BASE"
-  [depth]=8
-  [fuzzy]="${J_FUZZY:-fzf}"
-  [hidden]=
-  [links]=
+typeset -a patterns=()
+typeset -a candidates=()
+typeset target=
+
+[[ -d ${CFG[cache]} ]] \
+  || mkdir "${CFG[cache]}" \
+  || err 4 'could not create cache directory'
+
+parse_cmdline patterns "$@"
+dep 'fd' 'mkdir' 'realpath' ${CFG[fuzzy]%% *}
+
+cd "${CFG[cwd]}"
+
+mapfile -d$'\n' < <(
+  IFS='|' fd \
+  -d${CFG[depth]} \
+  -td \
+  ${CFG[hidden]} \
+  ${CFG[links]} \
+  "${exclude[@]}" \
+  -- "${patterns[*]}"
 )
-declare -a exclude matches patterns
 
-proc $@
-dep realpath fd ${opts[fuzzy]}
+(( ${#MAPFILE[@]} == 0 )) && err 2 'no matches found'
 
-make_exclude
-
-if (( ${J_INVERT_ALL:-0} == 1 )); then
-  [[ -z ${opts[hidden]} ]] && opts[hidden]='-H' || opts[hidden]=
+if (( ${#MAPFILE[@]} == 1 )); then
+  target="${MAPFILE[0]}"
+else
+  target=`printf "%s\n" ${MAPFILE[@]} | ${CFG[fuzzy]}`
+  [[ -z $target ]] && err 130 'interrupt'
 fi
 
-cd "${opts[base]}"
-IFS='|'
-declare fd=`fd -d${opts[depth]} -td ${opts[hidden]} ${opts[links]} ${exclude[@]} -- "${patterns[*]}"`
-
-IFS=$'\n'
-for dir in $fd; do
-  matches+=($dir)
-done
-
-(( ${#matches[@]} == 0 )) && result=1 sighandler
-(( ${#matches[@]} == 1 )) && dir="${matches[0]}" || {
-  dir=`printf "%s\n" ${matches[@]} | ${opts[fuzzy]}`
-  [[ -z $dir ]] && int=1 sighandler
-}
-
-jump 1 "${opts[base]%/}/$dir"
+jump 1 "$target"
