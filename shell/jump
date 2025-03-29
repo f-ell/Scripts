@@ -275,7 +275,7 @@ function clear_cache {
     break
   done
 
-  printf "${MAPFILE[@]}" >"${CFG[c_jmp]}"
+  printf "%s" "${MAPFILE[@]}" >"${CFG[c_jmp]}"
 }
 
 function try_cache {
@@ -312,10 +312,8 @@ function jump {
 
   if (( $update_src_cache == 1 )); then
     write_src_cache "$target"
-    printf "cd '%s/%s'\n" "${CFG[cwd]%/}" "${target#${CFG[cwd]}}"
-  else
-    printf "cd '%s'\n" "$target"
   fi
+  printf "cd '%s'\n" "$target"
 }
 
 function rejump {
