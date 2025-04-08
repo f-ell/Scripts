@@ -4,7 +4,7 @@ trap 'err 130 interrupt' HUP INT QUIT TERM
 
 typeset -g PROGRAM='j'
 typeset -g AUTHOR='Nico Pareigis'
-typeset -g VERSION='0.2.0'
+typeset -g VERSION='0.2.1'
 
 typeset -A CFG=(
   [c_dir]="${XDG_CACHE_HOME:-~/.cache}/jump"
@@ -243,6 +243,7 @@ function parse_cmdline {
         if (( $# > 1 )); then
           [[ ! -d $1 ]] && err 1 "not a directory: $1"
 
+          CFG[cache]=0
           CFG[cwd]=`realpath "$1"`
           shift
         fi
@@ -336,7 +337,7 @@ typeset target=
   || err 4 'could not create cache directory'
 [[ -f ${CFG[c_jmp]} ]] \
   || printf '' >"${CFG[c_jmp]}" \
-  || err 4 'could not create jumplist in cache directory' 
+  || err 4 'could not create jumplist' 
 
 parse_cmdline patterns "$@"
 dep 'fd' 'mkdir' 'realpath' ${CFG[fuzzy]%% *}
@@ -391,4 +392,4 @@ if (( ${CFG[cache]} == 1 )); then
   IFS="${CFG[ifs]}"
 fi
 
-jump 1 "$target"
+jump 1 "`realpath $target`"
