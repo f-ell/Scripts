@@ -1,0 +1,91 @@
+#!/bin/bash
+
+function err {
+  printf 'stubgen: %s\n' "$2" >&2
+  (( $1 > 0 )) && exit $1
+}
+
+typeset LOGPS=::
+typeset C=';38:5:2m'
+
+function log {
+  printf "\e[1$C::\e[0m %b\n" "$1" >&2
+}
+function logInfo {
+  printf "   \e[1$C->\e[0m %b\n" "$1" >&2
+}
+
+(( $EUID != 0 )) && err 1 'execution requires elevated privileges'
+
+typeset -A CFG=(
+  [l]=linux
+  [p]=1
+  [d]=/dev/sda
+
+  [r]=
+  [k]='initrd=\intel-ucode.img initrd=\initramfs-linux.img'
+)
+
+while (( $# > 0 )); do
+  case $1 in
+    -d)
+      (( $# == 1 )) && err 1 'missing argument for -d'
+
+      CFG[d]="$2"
+      shift 2
+      ;;
+
+    -l)
+      (( $# == 1 )) && err 1 'missing argument for -l'
+
+      CFG[l]="$2"
+      shift 2
+      ;;
+
+    -p)
+      (( $# == 1 )) && err 1 'missing argument for -p'
+
+      CFG[p]="$2"
+      shift 2
+      ;;
+
+    -r)
+      (( $# == 1 )) && err 1 'missing argument for -r'
+      [[ -b $2 ]] || err 1 "not a block device - $2"
+
+      CFG[r]="$2"
+      shift 2
+      ;;
+
+    --|*)
+      break;;
+  esac
+done
+
+[[ -z ${CFG[r]} ]] && err 1 'missing root partition (use -r to specify)'
+
+# ------------------------------------------------------------------------------
+
+log 'Configuration:'
+logInfo "label:          ${CFG[l]}"
+logInfo "esp partition:  ${CFG[p]}"
+logInfo "block device:   ${CFG[d]}"
+logInfo "root partition: ${CFG[r]}"
+printf '\n'
+
+log 'Default kernel parameters:'
+for p in ${CFG[k]}; do
+  logInfo "$p"
+done
+printf '\n'
+
+log 'Additional kernel parameters:'
+[[ -n $@ ]] && for p in "$@"; do
+  logInfo "$p"
+done
+printf '\n'
+
+read -p 'Continue? '
+
+efibootmgr -c -L"${CFG[l]}" -p"${CFG[p]}" -d"${CFG[d]}" -l/vmlinuz-linux\
+  -u "root=${CFG[r]} rw ${CFG[k]} $@"
